@@ -1,9 +1,13 @@
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
-    // System store is accessed by server.ts (Admin SDK or Client SDK fallback)
+    // System store is accessed by server.ts via the Firebase Admin SDK,
+    // which is always fully trusted and bypasses these rules entirely.
+    // This path must stay closed to ordinary (non-Admin-SDK) access —
+    // "if true" here means anyone on the internet can read/write the
+    // entire live database (including passwords) directly.
     match /system/store {
-      allow read, write: if true;
+      allow read, write: if false;
     }
     match /{document=**} {
       allow read, write: if false;

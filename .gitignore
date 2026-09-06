@@ -6,3 +6,11 @@ coverage/
 *.log
 .env*
 !.env.example
+
+# Runtime data store — contains real student PII, plaintext/hashed passwords,
+# and the admin passcode. This must never be committed to a public repo.
+data_students_registry.json
+
+# Auto-generated download bundles — no need to track these.
+public/project-source.zip
+public/project-source.tar.gz
