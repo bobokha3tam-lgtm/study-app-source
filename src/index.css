@@ -62,4 +62,39 @@
   animation: fadeInScale 0.25s cubic-bezier(0.16, 1, 0.3, 1) forwards;
 }
 
+@media print {
+  body {
+    background: #ffffff !important;
+    color: #000000 !important;
+  }
+  
+  /* Hide all app chrome during print */
+  header, nav, footer, main, .no-print, [role="dialog"]:not(.printable-modal) {
+    display: none !important;
+  }
+  
+  /* Show only printable section */
+  .printable-schedule-area {
+    display: block !important;
+    position: static !important;
+    width: 100% !important;
+    margin: 0 !important;
+    padding: 10px !important;
+    background: #ffffff !important;
+    color: #000000 !important;
+    box-shadow: none !important;
+    border: none !important;
+  }
+
+  .printable-schedule-area * {
+    color: #000000 !important;
+    border-color: #cbd5e1 !important;
+  }
+
+  @page {
+    size: A4 portrait;
+    margin: 8mm;
+  }
+}
+
 

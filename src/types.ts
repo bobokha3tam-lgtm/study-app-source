@@ -126,6 +126,12 @@ export interface WeeklySchedule {
   totalPlannedHours: number;
   strategySummary: string;
   days: DaySchedule[];
+  archivedAt?: string; // تاریخ آرشیو شدن
+  completionRate?: number; // درصد پایانی تحقق برنامه
+  completedBlocksCount?: number;
+  totalBlocksCount?: number;
+  cycleWeek?: 'week_1' | 'week_2' | 'standalone'; // آیا هفته اول است یا دوم از چرخه دو هفته‌ای آزمون
+  examCycleTarget?: string; // نام آزمونی که این هفته در چرخه آن قرار دارد
 }
 
 export interface NightlyReport {

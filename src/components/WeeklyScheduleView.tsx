@@ -35,7 +35,12 @@ import {
   ChevronUp,
   ArrowRight,
   ShieldCheck,
-  Hourglass
+  Hourglass,
+  Archive,
+  History,
+  FolderArchive,
+  Layers,
+  ArrowUpRight
 } from 'lucide-react';
 import { StudentProfile, WeeklySchedule, DaySchedule, StudyBlock, ExamBudget } from '../types';
 import { getSuggestedSubjectsForStream } from '../data/curriculumData';
@@ -92,6 +97,20 @@ export const WeeklyScheduleView: React.FC<WeeklyScheduleViewProps> = ({
 
   const [showExamTopicsList, setShowExamTopicsList] = useState<boolean>(true);
   const [showClearModal, setShowClearModal] = useState<boolean>(false);
+
+  // Two-week cadence state
+  const [examCycleWeek, setExamCycleWeek] = useState<'week_1' | 'week_2' | 'standalone'>('week_1');
+
+  // Archive & Historical Progress State
+  const [showArchiveModal, setShowArchiveModal] = useState<boolean>(false);
+  const [scheduleArchive, setScheduleArchive] = useState<WeeklySchedule[]>(() => {
+    try {
+      const saved = localStorage.getItem('study_advisor_schedule_archive');
+      return saved ? JSON.parse(saved) : [];
+    } catch {
+      return [];
+    }
+  });
 
   // Load ExamBudget from prop or fallback to localStorage
   const activeExamBudget: ExamBudget | null = React.useMemo(() => {
@@ -240,6 +259,80 @@ export const WeeklyScheduleView: React.FC<WeeklyScheduleViewProps> = ({
     newDays[safeActiveDayIndex] = targetDay;
     onUpdateSchedule({ ...schedule, days: newDays });
     showToast(done ? `تمام پارت‌های ${activeDay.dayName} تیک خوردند ✅` : `وضعیت پارت‌های ${activeDay.dayName} بازنشانی شد 🔄`);
+  };
+
+  const handleRecoverMissedBlocks = () => {
+    let missedBlocks: StudyBlock[] = [];
+    const newDays = [...schedule.days].map(day => {
+      if (day.dayName === 'جمعه' || day.dayName === 'پنج‌شنبه') {
+        return { ...day };
+      }
+      const doneBlocks = day.blocks.filter(b => b.isDone);
+      const notDoneBlocks = day.blocks.filter(b => !b.isDone);
+      missedBlocks = [...missedBlocks, ...notDoneBlocks.map(b => ({ ...b, id: `recovered-${Date.now()}-${Math.random()}` }))];
+      return { ...day, blocks: doneBlocks };
+    });
+
+    if (missedBlocks.length === 0) {
+      showToast('پارت عقب‌افتاده‌ای از شنبه تا چهارشنبه برای انتقال وجود ندارد! 🌟');
+      return;
+    }
+
+    const fridayIndex = newDays.findIndex(d => d.dayName === 'جمعه');
+    if (fridayIndex !== -1) {
+      newDays[fridayIndex].blocks = [...newDays[fridayIndex].blocks, ...missedBlocks];
+    } else {
+      newDays[newDays.length - 1].blocks = [...newDays[newDays.length - 1].blocks, ...missedBlocks];
+    }
+
+    onUpdateSchedule({ ...schedule, days: newDays });
+    showToast(`${missedBlocks.length} پارت عقب‌افتاده به ایستگاه جبرانی (جمعه) منتقل شد! 🚑`);
+  };
+
+  // Archive the current week schedule to permanent archive
+  const handleArchiveCurrentSchedule = () => {
+    const totalCount = allBlocks.length;
+    const doneCount = completedBlocks;
+    const rate = totalCount > 0 ? Math.round((doneCount / totalCount) * 100) : 0;
+
+    const archivedItem: WeeklySchedule = {
+      ...schedule,
+      archivedAt: new Date().toISOString(),
+      completionRate: rate,
+      completedBlocksCount: doneCount,
+      totalBlocksCount: totalCount,
+      cycleWeek: examCycleWeek,
+      examCycleTarget: activeExamBudget?.examName || 'آزمون آزمایشی'
+    };
+
+    const newArchive = [archivedItem, ...scheduleArchive.filter(item => item.id !== schedule.id)];
+    setScheduleArchive(newArchive);
+    try {
+      localStorage.setItem('study_advisor_schedule_archive', JSON.stringify(newArchive));
+    } catch {
+      // ignore
+    }
+
+    showToast(`برنامه «${schedule.weekTitle}» با موفقیت در آرشیو هفتگی ذخیره شد! 📦`);
+  };
+
+  // Restore a week from archive
+  const handleRestoreFromArchive = (archivedWeek: WeeklySchedule) => {
+    onUpdateSchedule(archivedWeek);
+    setShowArchiveModal(false);
+    showToast(`برنامه «${archivedWeek.weekTitle}» از آرشیو بازیابی شد 🔄`);
+  };
+
+  // Delete an item from archive
+  const handleDeleteArchivedItem = (id: string) => {
+    const updated = scheduleArchive.filter(item => item.id !== id);
+    setScheduleArchive(updated);
+    try {
+      localStorage.setItem('study_advisor_schedule_archive', JSON.stringify(updated));
+    } catch {
+      // ignore
+    }
+    showToast('برنامه انتخاب‌شده از آرشیو حذف شد 🗑️');
   };
 
   // Delete/Clear entire schedule (all blocks from all days)
@@ -438,7 +531,8 @@ export const WeeklyScheduleView: React.FC<WeeklyScheduleViewProps> = ({
           examErrors, 
           recentReports,
           planningStrategy,
-          spacedReviewEnabled
+          spacedReviewEnabled,
+          examCycleWeek
         }),
       });
 
@@ -452,6 +546,8 @@ export const WeeklyScheduleView: React.FC<WeeklyScheduleViewProps> = ({
           ...data.schedule,
           id: `week-${Date.now()}`,
           createdAt: new Date().toISOString(),
+          cycleWeek: examCycleWeek,
+          examCycleTarget: activeExamBudget?.examName || 'آزمون آزمایشی'
         };
         onUpdateSchedule(fullSchedule);
         setShowGenerateModal(false);
@@ -553,6 +649,12 @@ export const WeeklyScheduleView: React.FC<WeeklyScheduleViewProps> = ({
                   {completedTargetTestsAll} از {totalTargetTestsAll} تست زده شده
                 </span>
               )}
+              {schedule.cycleWeek && (
+                <span className="text-xs text-indigo-300 bg-indigo-500/20 px-2.5 py-1 rounded-full border border-indigo-500/30 font-semibold flex items-center gap-1">
+                  <Layers className="w-3 h-3 text-indigo-400" />
+                  {schedule.cycleWeek === 'week_1' ? 'چرخه ۲ هفته‌ای: هفته ۱ (آموزش و تکالیف)' : 'چرخه ۲ هفته‌ای: هفته ۲ (تست و آزمون)'}
+                </span>
+              )}
             </div>
 
             <h2 className="text-2xl sm:text-3xl font-black tracking-tight text-white">{schedule.weekTitle}</h2>
@@ -574,68 +676,103 @@ export const WeeklyScheduleView: React.FC<WeeklyScheduleViewProps> = ({
             </div>
           </div>
 
-          <div className="flex flex-wrap items-center gap-2 shrink-0">
-            {/* View Mode Toggle (Daily vs Weekly Grid) */}
-            <div className="bg-stone-800/80 p-1 rounded-xl border border-white/10 flex items-center gap-1">
+          <div className="flex flex-col md:items-end gap-3 shrink-0 w-full md:w-auto mt-4 md:mt-0">
+            {/* Primary Actions */}
+            <div className="flex flex-wrap items-center gap-2 md:justify-end w-full md:w-auto">
+              {/* View Mode Toggle (Daily vs Weekly Grid) */}
+              <div className="bg-stone-800/80 p-1 rounded-xl border border-white/10 flex items-center gap-1 w-full sm:w-auto">
+                <button
+                  onClick={() => setViewMode('daily')}
+                  className={`flex-1 sm:flex-none flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                    viewMode === 'daily'
+                      ? 'bg-emerald-500 text-stone-950 shadow-xs'
+                      : 'text-stone-300 hover:text-white hover:bg-white/5'
+                  }`}
+                  title="نمای تفکیکی روزانه"
+                >
+                  <List className="w-3.5 h-3.5" />
+                  <span>نمای روزانه</span>
+                </button>
+                <button
+                  onClick={() => setViewMode('weekly_grid')}
+                  className={`flex-1 sm:flex-none flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                    viewMode === 'weekly_grid'
+                      ? 'bg-emerald-500 text-stone-950 shadow-xs'
+                      : 'text-stone-300 hover:text-white hover:bg-white/5'
+                  }`}
+                  title="نمای جدول کامل هفتگی و چاپ"
+                >
+                  <LayoutGrid className="w-3.5 h-3.5" />
+                  <span>جدول کل هفته</span>
+                </button>
+              </div>
+
               <button
-                onClick={() => setViewMode('daily')}
-                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
-                  viewMode === 'daily'
-                    ? 'bg-emerald-500 text-stone-950 shadow-xs'
-                    : 'text-stone-300 hover:text-white'
-                }`}
-                title="نمای تفکیکی روزانه"
+                onClick={() => setShowGenerateModal(true)}
+                className="flex-1 sm:flex-none flex items-center justify-center gap-2 px-3.5 py-2 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-stone-950 text-xs font-black shadow-md hover:shadow-lg transition-all cursor-pointer group"
               >
-                <List className="w-3.5 h-3.5" />
-                <span>نمای روزانه</span>
+                <RefreshCw className="w-4 h-4 group-hover:rotate-180 transition-transform duration-500" />
+                <span>بازتولید با AI</span>
               </button>
+
               <button
-                onClick={() => setViewMode('weekly_grid')}
-                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
-                  viewMode === 'weekly_grid'
-                    ? 'bg-emerald-500 text-stone-950 shadow-xs'
-                    : 'text-stone-300 hover:text-white'
-                }`}
-                title="نمای جدول کامل هفتگی و چاپ"
+                onClick={handleRecoverMissedBlocks}
+                className="flex-1 sm:flex-none flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl bg-orange-500/20 hover:bg-orange-500/30 text-orange-200 text-xs font-bold border border-orange-500/30 transition-all cursor-pointer"
+                title="انتقال تمام پارت‌های عقب‌افتاده به روز جمعه"
               >
-                <LayoutGrid className="w-3.5 h-3.5" />
-                <span>جدول کل هفته</span>
+                <RotateCcw className="w-4 h-4 text-orange-400" />
+                <span className="hidden sm:inline">ایستگاه جبرانی</span>
+                <span className="sm:hidden">جبرانی</span>
               </button>
             </div>
 
-            <button
-              onClick={() => setShowGenerateModal(true)}
-              className="flex items-center gap-2 px-3.5 py-2 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-stone-950 text-xs font-black shadow-md hover:shadow-lg transition-all cursor-pointer group"
-            >
-              <RefreshCw className="w-4 h-4 group-hover:rotate-180 transition-transform duration-500" />
-              <span>بازتولید با AI</span>
-            </button>
+            {/* Secondary Actions */}
+            <div className="flex flex-wrap items-center gap-2 md:justify-end w-full md:w-auto">
+              <div className="flex-1 sm:flex-none flex items-center gap-1 bg-stone-800/80 p-1 rounded-xl border border-white/10">
+                <button
+                  onClick={handleArchiveCurrentSchedule}
+                  className="flex-1 sm:flex-none flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-lg bg-amber-500 hover:bg-amber-400 text-stone-900 text-xs font-black transition-all shadow-md cursor-pointer"
+                  title="ذخیره وضعیت این هفته در آرشیو هفتگی"
+                >
+                  <FolderArchive className="w-4 h-4" />
+                  <span>ذخیره در آرشیو</span>
+                </button>
+                <button
+                  onClick={() => setShowArchiveModal(true)}
+                  className="flex-1 sm:flex-none flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-lg bg-indigo-500 hover:bg-indigo-400 text-white text-xs font-black transition-all shadow-md cursor-pointer relative"
+                  title="مشاهده آرشیو هفته‌های گذشته"
+                >
+                  <History className="w-4 h-4" />
+                  <span>آرشیو هفته‌ها ({scheduleArchive.length})</span>
+                </button>
+              </div>
 
-            <button
-              onClick={handlePrintSchedule}
-              className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-white/10 hover:bg-white/20 text-white text-xs font-bold border border-white/15 transition-all cursor-pointer"
-              title="چاپ برنامه یا ذخیره به عنوان PDF"
-            >
-              <Printer className="w-4 h-4 text-sky-400" />
-              <span>چاپ (PDF)</span>
-            </button>
+              <div className="flex-1 sm:flex-none flex items-center gap-1 bg-stone-800/80 p-1 rounded-xl border border-white/10">
+                <button
+                  onClick={handlePrintSchedule}
+                  className="flex-1 sm:flex-none flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-lg hover:bg-white/10 text-white text-xs font-bold transition-all cursor-pointer"
+                  title="چاپ برنامه یا ذخیره به عنوان PDF"
+                >
+                  <Printer className="w-3.5 h-3.5 text-sky-400" />
+                  <span className="hidden sm:inline">چاپ (PDF)</span>
+                </button>
+                <button
+                  onClick={handleCopyScheduleText}
+                  className="flex-1 sm:flex-none flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-lg hover:bg-white/10 text-white text-xs font-bold transition-all cursor-pointer"
+                >
+                  {copied ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}
+                  <span className="hidden sm:inline">{copied ? 'کپی شد' : 'اشتراک'}</span>
+                </button>
+              </div>
 
-            <button
-              onClick={handleCopyScheduleText}
-              className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-white/10 hover:bg-white/20 text-white text-xs font-bold border border-white/15 transition-all cursor-pointer"
-            >
-              {copied ? <Check className="w-4 h-4 text-emerald-400" /> : <Copy className="w-4 h-4" />}
-              <span>{copied ? 'کپی شد' : 'اشتراک'}</span>
-            </button>
-
-            <button
-              onClick={() => setShowClearModal(true)}
-              className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-rose-500/15 hover:bg-rose-500/25 text-rose-300 hover:text-rose-200 text-xs font-bold border border-rose-500/30 transition-all cursor-pointer"
-              title="حذف کامل تمام پارت‌های برنامه هفتگی"
-            >
-              <Trash2 className="w-4 h-4 text-rose-400" />
-              <span>حذف کل برنامه</span>
-            </button>
+              <button
+                onClick={() => setShowClearModal(true)}
+                className="flex items-center justify-center p-2 rounded-xl bg-rose-500/15 hover:bg-rose-500/25 text-rose-300 hover:text-rose-200 border border-rose-500/30 transition-all cursor-pointer"
+                title="حذف کامل تمام پارت‌های برنامه هفتگی"
+              >
+                <Trash2 className="w-4 h-4 text-rose-400" />
+              </button>
+            </div>
           </div>
         </div>
       </div>
@@ -1510,6 +1647,50 @@ export const WeeklyScheduleView: React.FC<WeeklyScheduleViewProps> = ({
                 </button>
               </div>
 
+              {/* Two-Week Exam Cadence Selector */}
+              <div className="bg-stone-50 p-3 rounded-2xl border border-stone-200 space-y-2">
+                <div className="flex items-center justify-between">
+                  <label className="block text-xs font-bold text-stone-800 flex items-center gap-1.5">
+                    <Layers className="w-3.5 h-3.5 text-indigo-600" />
+                    <span>چرخه ۲ هفته‌ای آزمون آزمایشی:</span>
+                  </label>
+                  <span className="text-[10px] bg-indigo-100 text-indigo-800 font-bold px-2 py-0.5 rounded-md">
+                    قلم‌چی / ماز / سنجش
+                  </span>
+                </div>
+                <div className="grid grid-cols-2 gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setExamCycleWeek('week_1')}
+                    className={`p-2.5 rounded-xl border text-right transition-all flex flex-col gap-1 cursor-pointer ${
+                      examCycleWeek === 'week_1'
+                        ? 'border-indigo-600 bg-indigo-50/80 text-indigo-950 shadow-xs'
+                        : 'border-stone-200 bg-white text-stone-700 hover:border-stone-300'
+                    }`}
+                  >
+                    <span className="font-bold text-xs text-indigo-950">🌱 هفته اول (پیش‌روی و تکالیف)</span>
+                    <span className="text-[10px] text-stone-500 leading-tight">
+                      ۷۰٪ یادگیری مفهومی، پیش‌روی بودجه، تکالیف معلم و مرور روزانه کلاس‌ها
+                    </span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => setExamCycleWeek('week_2')}
+                    className={`p-2.5 rounded-xl border text-right transition-all flex flex-col gap-1 cursor-pointer ${
+                      examCycleWeek === 'week_2'
+                        ? 'border-indigo-600 bg-indigo-50/80 text-indigo-950 shadow-xs'
+                        : 'border-stone-200 bg-white text-stone-700 hover:border-stone-300'
+                    }`}
+                  >
+                    <span className="font-bold text-xs text-indigo-950">🎯 هفته دوم (تست زمان‌دار و آزمون)</span>
+                    <span className="text-[10px] text-stone-500 leading-tight">
+                      تست‌های سرعتی و زمان‌دار، جمع‌بندی نکات، رفع اشکال و آمادگی آزمون جمعه
+                    </span>
+                  </button>
+                </div>
+              </div>
+
               {/* AI Engine Selection */}
               <div className="bg-stone-50 p-3 rounded-2xl border border-stone-200 space-y-2">
                 <label className="block text-xs font-bold text-stone-800">
@@ -1617,10 +1798,11 @@ export const WeeklyScheduleView: React.FC<WeeklyScheduleViewProps> = ({
 
               <div className="flex flex-wrap gap-1.5 pt-1">
                 {[
+                  'تخصیص زمان ویژه برای تکالیف مدرسه و مرور روزانه کلاس‌ها',
+                  'هفته اول چرخه: پیش‌روی مباحث و تست‌های آموزشی',
+                  'هفته دوم چرخه: تست‌های زمان‌دار و جمع‌بندی آزمون جمعه',
                   'تمرکز ویژه روی تست دروس ضعیف',
-                  'هفته جمع‌بندی و آزمون آزمایشی',
-                  'جبران عقب‌افتادگی‌های مباحث پایه',
-                  'حالت فشرده با افزایش ۱ ساعت مطالعه روزانه'
+                  'جبران عقب‌افتادگی‌های مباحث پایه'
                 ].map((preset, i) => (
                   <button
                     key={i}
@@ -1659,6 +1841,158 @@ export const WeeklyScheduleView: React.FC<WeeklyScheduleViewProps> = ({
                     <span>تولید برنامه ۷ روزه</span>
                   </>
                 )}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Weekly Archive & Progress Tracker Modal */}
+      {showArchiveModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs animate-fadeIn">
+          <div className="bg-white rounded-3xl max-w-2xl w-full p-6 sm:p-7 shadow-2xl border border-stone-200 space-y-5 text-right max-h-[85vh] flex flex-col">
+            <div className="flex justify-between items-center pb-3 border-b border-stone-100 shrink-0">
+              <div className="flex items-center gap-2.5">
+                <div className="p-2 bg-indigo-100 text-indigo-700 rounded-2xl">
+                  <FolderArchive className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="font-black text-stone-900 text-base">
+                    آرشیو هفتگی و پایش روند پیشرفت
+                  </h3>
+                  <p className="text-[11px] text-stone-500">
+                    ثبت و ذخیره برنامه‌های سپری‌شده برای مشاهده درصد تحقق، استمرار و بازیابی آسان
+                  </p>
+                </div>
+              </div>
+              <button
+                onClick={() => setShowArchiveModal(false)}
+                className="text-stone-400 hover:text-stone-700 font-bold p-1 cursor-pointer"
+              >
+                ✕
+              </button>
+            </div>
+
+            {/* Quick Archive Action for Current Week */}
+            <div className="bg-gradient-to-r from-amber-50 to-orange-50 border border-amber-200/80 p-4 rounded-2xl flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 shrink-0">
+              <div>
+                <span className="font-bold text-xs text-amber-950 block">
+                  ذخیره برنامه هفته جاری در آرشیو
+                </span>
+                <span className="text-[11px] text-amber-900/80">
+                  وضعیت فعلی: {completedBlocks} از {allBlocks.length} پارت انجام شده ({progressPercent}٪ پیشرفت)
+                </span>
+              </div>
+              <button
+                onClick={handleArchiveCurrentSchedule}
+                className="px-4 py-2 bg-amber-600 hover:bg-amber-500 text-white rounded-xl text-xs font-black shadow-xs transition-all flex items-center gap-1.5 cursor-pointer shrink-0"
+              >
+                <Archive className="w-4 h-4" />
+                <span>ذخیره نسخه فعلی</span>
+              </button>
+            </div>
+
+            {/* Archive List */}
+            <div className="flex-1 overflow-y-auto space-y-3 pr-1">
+              {scheduleArchive.length === 0 ? (
+                <div className="py-12 text-center space-y-3">
+                  <div className="w-12 h-12 rounded-2xl bg-stone-100 text-stone-400 flex items-center justify-center mx-auto">
+                    <History className="w-6 h-6" />
+                  </div>
+                  <h4 className="font-black text-stone-700 text-sm">هنوز برنامه‌ای آرشیو نشده است</h4>
+                  <p className="text-xs text-stone-500 max-w-sm mx-auto">
+                    در پایان هر هفته، با زدن دکمه «ذخیره در آرشیو»، عملکرد، میزان پیشرفت و جدول هفتگی خود را ذخیره کنید تا تاریخچه پیشرفت شما کامل شود.
+                  </p>
+                </div>
+              ) : (
+                scheduleArchive.map((item) => {
+                  const rate = item.completionRate ?? 0;
+                  return (
+                    <div
+                      key={item.id}
+                      className="bg-stone-50 hover:bg-stone-100/80 p-4 rounded-2xl border border-stone-200 transition-all space-y-3"
+                    >
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="space-y-1">
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <span className="font-black text-sm text-stone-900">
+                              {item.weekTitle || 'برنامه هفتگی'}
+                            </span>
+                            {item.cycleWeek && (
+                              <span className="text-[10px] bg-indigo-100 text-indigo-800 font-bold px-2 py-0.5 rounded-md">
+                                {item.cycleWeek === 'week_1' ? 'هفته ۱ (آموزش و تکالیف)' : item.cycleWeek === 'week_2' ? 'هفته ۲ (تست و آزمون)' : 'هفتگی'}
+                              </span>
+                            )}
+                            {item.examCycleTarget && (
+                              <span className="text-[10px] bg-stone-200 text-stone-700 px-2 py-0.5 rounded-md font-medium">
+                                🎯 {item.examCycleTarget}
+                              </span>
+                            )}
+                          </div>
+                          <p className="text-[11px] text-stone-500 line-clamp-1">
+                            {item.strategySummary}
+                          </p>
+                        </div>
+
+                        {/* Actions */}
+                        <div className="flex items-center gap-1.5 shrink-0">
+                          <button
+                            onClick={() => handleRestoreFromArchive(item)}
+                            className="flex items-center gap-1 px-3 py-1.5 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl text-xs font-black shadow-xs transition-all cursor-pointer"
+                            title="بارگذاری و استفاده از این برنامه در جدول هفتگی"
+                          >
+                            <RotateCcw className="w-3.5 h-3.5" />
+                            <span>بازیابی</span>
+                          </button>
+                          <button
+                            onClick={() => handleDeleteArchivedItem(item.id)}
+                            className="p-1.5 text-stone-400 hover:text-rose-600 rounded-lg hover:bg-rose-50 transition-colors cursor-pointer"
+                            title="حذف از آرشیو"
+                          >
+                            <Trash2 className="w-4 h-4" />
+                          </button>
+                        </div>
+                      </div>
+
+                      {/* Progress Bar & Stats */}
+                      <div className="space-y-1.5 bg-white p-3 rounded-xl border border-stone-200/60">
+                        <div className="flex justify-between text-xs">
+                          <span className="text-stone-600 flex items-center gap-1">
+                            <span>پیشرفت پارت‌ها:</span>
+                            <span className="font-black text-stone-900">
+                              {item.completedBlocksCount ?? 0} از {item.totalBlocksCount ?? item.days?.reduce((acc, d) => acc + (d.blocks?.length || 0), 0) ?? 0} پارت
+                            </span>
+                          </span>
+                          <span className={`font-black ${rate >= 75 ? 'text-emerald-600' : rate >= 50 ? 'text-amber-600' : 'text-stone-700'}`}>
+                            {rate}٪ محقق‌شده
+                          </span>
+                        </div>
+                        <div className="w-full h-2 bg-stone-100 rounded-full overflow-hidden">
+                          <div
+                            className={`h-full rounded-full transition-all ${
+                              rate >= 75 ? 'bg-emerald-500' : rate >= 50 ? 'bg-amber-500' : 'bg-indigo-500'
+                            }`}
+                            style={{ width: `${rate}%` }}
+                          />
+                        </div>
+                        <div className="flex justify-between items-center text-[10px] text-stone-400 pt-1">
+                          <span>کل ساعات برنامه‌ریزی: {item.totalPlannedHours} ساعت</span>
+                          <span>تاریخ آرشیو: {item.archivedAt ? new Date(item.archivedAt).toLocaleDateString('fa-IR') : 'نامشخص'}</span>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })
+              )}
+            </div>
+
+            <div className="pt-3 border-t border-stone-100 flex justify-end shrink-0">
+              <button
+                type="button"
+                onClick={() => setShowArchiveModal(false)}
+                className="px-5 py-2 text-xs font-bold text-stone-600 hover:text-stone-800 bg-stone-100 hover:bg-stone-200 rounded-xl cursor-pointer"
+              >
+                بستن پنجره
               </button>
             </div>
           </div>
