@@ -1,0 +1,10 @@
+{
+  "name": "مشاور درسی هوشمند",
+  "description": "سامانه جامع مشاوره تحصیلی، انتخاب رشته سراسری و دانشگاه آزاد، برنامه‌ریزی هوشمند با روانشناسی یادگیری عمیق، تحلیل شبانه و اتصال تلگرام",
+  "requestFramePermissions": [
+    "clipboard-read",
+    "clipboard-write",
+    "web-share"
+  ],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

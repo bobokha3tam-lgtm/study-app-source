@@ -1,0 +1,19 @@
+{
+  "entities": {
+    "Store": {
+      "title": "System Store",
+      "description": "The main storage for the application",
+      "type": "object",
+      "properties": {
+        "counselorConfig": { "type": "object" },
+        "students": { "type": "array" }
+      }
+    }
+  },
+  "firestore": {
+    "system/store": {
+      "schema": { "$ref": "#/entities/Store" },
+      "description": "Main application data store."
+    }
+  }
+}
