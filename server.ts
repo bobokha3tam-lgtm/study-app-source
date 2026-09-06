@@ -4231,8 +4231,17 @@ app.post("/api/telegram/test-student-ping", async (req, res) => {
 
 // General Send Message Endpoint (Uses passed token OR server's master bot token)
 app.post("/api/telegram/send-message", async (req, res) => {
-  const { botToken, chatId, text } = req.body;
-  const tokenToUse = botToken?.trim() || serverStudentStore.telegramBotConfig?.botToken || currentPollingToken;
+  const clientIp = getClientIp(req);
+  const session = getValidCounselorSession(req.headers.authorization);
+  if (!session) {
+    addSecurityAuditLog("unauthorized_telegram_send", "warning", "تلاش غیرمجاز برای ارسال پیام تلگرام بدون احراز هویت مشاور", clientIp);
+    return res.status(401).json({ success: false, error: "دسترسی غیرمجاز. فقط مشاور مجاز به ارسال پیام است." });
+  }
+  const { chatId, text } = req.body;
+  // Only ever use the school's own configured bot token — never a
+  // caller-supplied one, which would turn this endpoint into an open relay
+  // for sending messages through arbitrary Telegram bots.
+  const tokenToUse = serverStudentStore.telegramBotConfig?.botToken || currentPollingToken;
 
   if (!tokenToUse || !chatId || !text) {
     return res.status(400).json({
@@ -4273,8 +4282,12 @@ app.post("/api/telegram/send-message", async (req, res) => {
 
 // Send Complete Guide to Telegram
 app.post("/api/telegram/send-guide", async (req, res) => {
-  const { botToken, chatId, studentName } = req.body;
-  const tokenToUse = botToken?.trim() || serverStudentStore.telegramBotConfig?.botToken || currentPollingToken;
+  const session = getValidCounselorSession(req.headers.authorization);
+  if (!session) {
+    return res.status(401).json({ success: false, error: "دسترسی غیرمجاز. فقط مشاور مجاز است." });
+  }
+  const { chatId, studentName } = req.body;
+  const tokenToUse = serverStudentStore.telegramBotConfig?.botToken || currentPollingToken;
 
   if (!tokenToUse || !chatId) {
     return res.status(400).json({
@@ -4324,6 +4337,10 @@ app.get("/api/telegram/activity-logs", (req, res) => {
 });
 
 app.post("/api/telegram/clear-logs", (req, res) => {
+  const session = getValidCounselorSession(req.headers.authorization);
+  if (!session) {
+    return res.status(401).json({ success: false, error: "دسترسی غیرمجاز. فقط مشاور مجاز است." });
+  }
   telegramLogs = [];
   return res.json({ success: true, message: "لاگ‌های تلگرام پاکسازی شدند." });
 });
@@ -5888,6 +5905,17 @@ app.post("/api/students/delete", (req, res) => {
   try {
     const clientIp = getClientIp(req);
     const session = getValidCounselorSession(req.headers.authorization);
+
+    if (!session) {
+      addSecurityAuditLog(
+        "unauthorized_delete_attempt",
+        "critical",
+        "تلاش غیرمجاز برای حذف حساب دانش‌آموز بدون احراز هویت مشاور",
+        clientIp
+      );
+      return res.status(401).json({ success: false, error: "دسترسی غیرمجاز: حذف حساب فقط برای مشاور مجاز است." });
+    }
+
     const { studentKey } = req.body;
 
     const key = String(studentKey || "").trim().toLowerCase();
@@ -5956,6 +5984,27 @@ app.post("/api/students/sync", (req, res) => {
     const isCounselor = Boolean(session);
     const { students, deletedStudents, usageStats } = req.body;
 
+    // Non-counselor callers must be an authenticated student. Previously this
+    // branch had no auth check at all, letting anyone create fake student
+    // accounts (with a password of their choosing) or tamper with other
+    // students' data/usage stats with zero authentication.
+    let authedStudent: { studentId: string; studentName: string } | null = null;
+    if (!isCounselor) {
+      const studentSession =
+        getValidStudentSession(req.headers.authorization) ||
+        getValidStudentSession(req.body?.studentToken);
+      if (!studentSession) {
+        addSecurityAuditLog(
+          "unauthorized_sync_attempt",
+          "warning",
+          "تلاش غیرمجاز برای همگام‌سازی داده‌های دانش‌آموزان بدون احراز هویت",
+          clientIp
+        );
+        return res.status(401).json({ success: false, error: "احراز هویت الزامی است." });
+      }
+      authedStudent = { studentId: studentSession.studentId, studentName: studentSession.studentName };
+    }
+
     if (isCounselor) {
       // Counselor has full sync authority
       if (Array.isArray(students)) {
@@ -6002,57 +6051,60 @@ app.post("/api/students/sync", (req, res) => {
         serverStudentStore.students = processedStudents;
       }
     } else {
-      // Non-counselor (Student client): fine-grained selective upsert (cannot wipe other students or override blacklist)
-      if (Array.isArray(students)) {
-        const currentBlacklist = serverStudentStore.deletedStudents;
-        students.forEach((incomingStudent: any) => {
-          if (!incomingStudent || !incomingStudent.name) return;
-          const key = String(incomingStudent.id || incomingStudent.name).toLowerCase();
-          
-          // Cannot resurrect or modify deleted students
-          if (currentBlacklist.some(d => d.toLowerCase() === key || d.toLowerCase() === incomingStudent.name.toLowerCase())) {
-            return;
-          }
+      // Authenticated student: may only upsert their own record, and may not
+      // create new students, resurrect deleted ones, or touch other accounts.
+      if (Array.isArray(students) && authedStudent) {
+        const ownKey = authedStudent.studentId.toLowerCase();
+        const ownNameKey = authedStudent.studentName.toLowerCase();
+        const incomingStudent = students.find(
+          (s: any) =>
+            s && ((s.id && String(s.id).toLowerCase() === ownKey) ||
+                  (s.name && String(s.name).toLowerCase() === ownNameKey))
+        );
 
+        if (incomingStudent) {
           const existingIdx = serverStudentStore.students.findIndex(
-            s => (s.name && s.name.toLowerCase() === incomingStudent.name.toLowerCase()) ||
-                 (s.id && incomingStudent.id && s.id.toLowerCase() === incomingStudent.id.toLowerCase())
+            s => (s.id && s.id.toLowerCase() === ownKey) || (s.name && s.name.toLowerCase() === ownNameKey)
           );
 
           if (existingIdx >= 0) {
             const current = serverStudentStore.students[existingIdx];
-            // Preserve security status and passwordHash from server if not counselor
+            // Preserve security-sensitive fields from server regardless of
+            // what the client sends — a student sync must never change their
+            // own password, access status, or lockout reason.
             serverStudentStore.students[existingIdx] = {
               ...current,
               ...incomingStudent,
-              accessStatus: current.accessStatus || incomingStudent.accessStatus || "active",
-              lockoutReason: current.lockoutReason || incomingStudent.lockoutReason,
-              passwordHash: current.passwordHash || (incomingStudent.password ? hashPassword(incomingStudent.password) : undefined)
+              id: current.id,
+              name: current.name,
+              accessStatus: current.accessStatus,
+              lockoutReason: current.lockoutReason,
+              passwordHash: current.passwordHash,
+              password: current.password
             };
-          } else {
-            // New student upsert
-            let passwordHash = incomingStudent.passwordHash;
-            if (incomingStudent.password && (!incomingStudent.password.startsWith("pbkdf2:") && incomingStudent.password !== "••••••••")) {
-              passwordHash = hashPassword(incomingStudent.password);
-            }
-            serverStudentStore.students.push({
-              ...incomingStudent,
-              id: incomingStudent.id || `st_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
-              accessStatus: incomingStudent.accessStatus || "active",
-              maxAllowedDevices: incomingStudent.maxAllowedDevices || 2,
-              boundDevices: incomingStudent.boundDevices || [],
-              passwordHash: passwordHash || hashPassword(incomingStudent.password || "1234")
-            });
           }
-        });
+          // If no existing record matches, do nothing — students can never
+          // create new accounts via sync.
+        }
       }
     }
 
     if (usageStats && typeof usageStats === "object") {
-      serverStudentStore.usageStats = {
-        ...serverStudentStore.usageStats,
-        ...usageStats
-      };
+      if (isCounselor) {
+        serverStudentStore.usageStats = {
+          ...serverStudentStore.usageStats,
+          ...usageStats
+        };
+      } else if (authedStudent) {
+        // A student may only write their own usage stats entry.
+        const ownKey = authedStudent.studentId;
+        const ownNameKey = authedStudent.studentName;
+        const ownEntry = usageStats[ownKey] || usageStats[ownNameKey];
+        if (ownEntry) {
+          serverStudentStore.usageStats[ownKey] = ownEntry;
+          serverStudentStore.usageStats[ownNameKey] = ownEntry;
+        }
+      }
     }
 
     serverStudentStore.updatedAt = new Date().toISOString();
@@ -6072,9 +6124,21 @@ app.post("/api/students/sync", (req, res) => {
 });
 
 // Student usage stats endpoints
-app.post("/api/students/usage", (req, res) => {
+app.post("/api/students/usage", requireAuthorizedUser, (req, res) => {
   try {
     const { studentKey, usage } = req.body;
+    const user = (req as any).user;
+
+    // Students may only write their own usage stats; the counselor may write any.
+    if (user?.type === "student") {
+      const inputKey = String(studentKey || "").trim().toLowerCase();
+      const ownName = (user.studentName || "").trim().toLowerCase();
+      const ownId = (user.studentId || "").trim().toLowerCase();
+      if (inputKey !== ownName && inputKey !== ownId) {
+        return res.status(403).json({ success: false, error: "امکان ثبت آمار برای حساب دیگری وجود ندارد." });
+      }
+    }
+
     if (studentKey && usage) {
       serverStudentStore.usageStats[studentKey] = {
         ...usage,
@@ -6089,7 +6153,13 @@ app.post("/api/students/usage", (req, res) => {
   }
 });
 
-app.get("/api/students/usage", (req, res) => {
+app.get("/api/students/usage", requireAuthorizedUser, (req, res) => {
+  const user = (req as any).user;
+  if (user?.type === "student") {
+    // A student may only see their own usage stats, not everyone else's.
+    const ownEntry = serverStudentStore.usageStats[user.studentId] || serverStudentStore.usageStats[user.studentName];
+    return res.json({ success: true, usageStats: ownEntry ? { [user.studentName]: ownEntry } : {} });
+  }
   res.json({
     success: true,
     usageStats: serverStudentStore.usageStats
