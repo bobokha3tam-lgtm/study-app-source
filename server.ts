@@ -4073,6 +4073,79 @@ app.post("/api/counselor/telegram-toggle-polling", (req, res) => {
 });
 
 // Student: Enter and Link Telegram Chat ID / Username to Account
+// Student self-service password change. Previously there was no way for a
+// student to ever change their own password — only the counselor could edit
+// it for them from the admin portal. Since the default password ("1234") is
+// meant to be changed by each student themselves, this endpoint provides
+// that missing capability.
+app.post("/api/students/change-password", (req, res) => {
+  try {
+    const clientIp = getClientIp(req);
+    const { studentKey, currentPassword, newPassword } = req.body;
+    const inputKey = String(studentKey || "").trim().toLowerCase();
+
+    if (!inputKey || !currentPassword || !newPassword) {
+      return res.status(400).json({
+        success: false,
+        error: "شناسه دانش‌آموز، رمز فعلی و رمز جدید همگی الزامی است.",
+      });
+    }
+
+    const cleanNewPassword = String(newPassword).trim();
+    if (cleanNewPassword.length < 4) {
+      return res.status(400).json({
+        success: false,
+        error: "رمز جدید باید حداقل ۴ کاراکتر باشد.",
+      });
+    }
+
+    // Rate-limit by student key + IP so this can't be used to brute-force a
+    // student's current password.
+    const rateKey = `pwchange:${inputKey}:${clientIp}`;
+    const rateCheck = checkRateLimit(rateKey, 5, 15 * 60 * 1000, 15 * 60 * 1000);
+    if (!rateCheck.allowed) {
+      return res.status(429).json({
+        success: false,
+        error: `تعداد تلاش‌های شما بیش از حد مجاز بود. لطفاً ${rateCheck.lockoutMinutes} دقیقه دیگر مجدداً تلاش کنید.`,
+      });
+    }
+
+    const matchedStudent = serverStudentStore.students.find(
+      (s) =>
+        (s.name && s.name.toLowerCase() === inputKey) ||
+        (s.id && s.id.toLowerCase() === inputKey)
+    );
+
+    if (!matchedStudent) {
+      return res.status(404).json({ success: false, error: "دانش‌آموز در سامانه یافت نشد." });
+    }
+
+    const studentStoredHash = matchedStudent.passwordHash || matchedStudent.password || "1234";
+    if (!verifyPassword(String(currentPassword).trim(), studentStoredHash)) {
+      recordFailedAttempt(rateKey, 5, 15 * 60 * 1000, 15 * 60 * 1000);
+      return res.status(403).json({ success: false, error: "رمز عبور فعلی صحیح نیست." });
+    }
+
+    resetRateLimit(rateKey);
+
+    matchedStudent.passwordHash = hashPassword(cleanNewPassword);
+    delete matchedStudent.password; // never keep the old plaintext copy around
+    serverStudentStore.updatedAt = new Date().toISOString();
+    saveServerStudentStore(serverStudentStore);
+
+    addSecurityAuditLog(
+      "student_password_changed",
+      "info",
+      `دانش‌آموز «${matchedStudent.name}» رمز عبور خود را تغییر داد`,
+      clientIp
+    );
+
+    res.json({ success: true, message: "رمز عبور شما با موفقیت تغییر کرد." });
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: err?.message || "Failed to change password" });
+  }
+});
+
 app.post("/api/students/telegram-link", async (req, res) => {
   try {
     const clientIp = getClientIp(req);

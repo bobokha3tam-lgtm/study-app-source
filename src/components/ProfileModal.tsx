@@ -1,7 +1,8 @@
 import React, { useState } from 'react';
-import { X, Check, BookOpen, Target, Clock, AlertCircle, RotateCcw, Trash2, Shield, Smartphone } from 'lucide-react';
+import { X, Check, BookOpen, Target, Clock, AlertCircle, RotateCcw, Trash2, Shield, Smartphone, KeyRound } from 'lucide-react';
 import { StudentProfile } from '../types';
 import { DeviceSessionManagerModal } from './DeviceSessionManagerModal';
+import { ChangePasswordModal } from './ChangePasswordModal';
 
 interface ProfileModalProps {
   isOpen: boolean;
@@ -76,6 +77,7 @@ export const ProfileModal: React.FC<ProfileModalProps> = ({
   const [strongInput, setStrongInput] = useState('');
   const [isConfirmingDelete, setIsConfirmingDelete] = useState(false);
   const [isDeviceModalOpen, setIsDeviceModalOpen] = useState(false);
+  const [isChangePasswordOpen, setIsChangePasswordOpen] = useState(false);
 
   if (!isOpen) return null;
 
@@ -221,13 +223,25 @@ export const ProfileModal: React.FC<ProfileModalProps> = ({
 
             <div>
               <label className="block text-xs font-semibold text-stone-700 mb-1">رمز ورود اختصاصی به این اکانت</label>
-              <input
-                type="text"
-                value={formData.password || ''}
-                onChange={e => setFormData({ ...formData, password: e.target.value })}
-                className="w-full px-3 py-2 rounded-lg border border-stone-300 text-sm font-mono focus:outline-emerald-600 bg-amber-50/50"
-                placeholder="پیش‌فرض: 1234"
-              />
+              <div className="flex items-center gap-2">
+                <input
+                  type="password"
+                  value="••••••••"
+                  disabled
+                  className="w-full px-3 py-2 rounded-lg border border-stone-200 text-sm font-mono bg-stone-100 text-stone-400 cursor-not-allowed"
+                />
+                <button
+                  type="button"
+                  onClick={() => setIsChangePasswordOpen(true)}
+                  className="shrink-0 flex items-center gap-1.5 px-3 py-2 rounded-lg bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border border-emerald-200 text-xs font-bold transition-all cursor-pointer whitespace-nowrap"
+                >
+                  <KeyRound className="w-3.5 h-3.5" />
+                  <span>تغییر رمز</span>
+                </button>
+              </div>
+              <p className="text-[11px] text-stone-400 mt-1">
+                برای تغییر رمز، باید رمز فعلی خود را بدانید. تغییر رمز از همین‌جا مستقیماً روی سرور اعمال می‌شود.
+              </p>
             </div>
           </div>
 
@@ -474,6 +488,18 @@ export const ProfileModal: React.FC<ProfileModalProps> = ({
         onDevicesUpdated={(updated) => {
           setFormData((prev) => ({ ...prev, boundDevices: updated }));
           onSave({ ...formData, boundDevices: updated });
+        }}
+      />
+
+      {/* Self-Service Password Change Modal */}
+      <ChangePasswordModal
+        isOpen={isChangePasswordOpen}
+        onClose={() => setIsChangePasswordOpen(false)}
+        profile={formData}
+        onPasswordChanged={(newPassword) => {
+          const updated = { ...formData, password: newPassword };
+          setFormData(updated);
+          onSave(updated);
         }}
       />
     </div>
