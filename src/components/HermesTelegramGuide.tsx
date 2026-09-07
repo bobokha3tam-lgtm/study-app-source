@@ -172,6 +172,7 @@ export const HermesTelegramGuide: React.FC<HermesTelegramGuideProps> = ({ profil
           studentId: profile.id,
           chatId: chatId.trim(),
           telegramUsername: telegramUsername.trim(),
+          password: profile.password,
         }),
       });
 

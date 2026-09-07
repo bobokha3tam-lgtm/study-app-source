@@ -4075,16 +4075,25 @@ app.post("/api/counselor/telegram-toggle-polling", (req, res) => {
 // Student: Enter and Link Telegram Chat ID / Username to Account
 app.post("/api/students/telegram-link", async (req, res) => {
   try {
-    const { studentKey, telegramChatId, telegramUsername } = req.body;
-    if (!studentKey || !telegramChatId) {
+    const clientIp = getClientIp(req);
+    // Accept both the documented field names and the ones the current
+    // frontend actually sends (studentName/studentId + chatId), so the
+    // feature works with either caller.
+    const {
+      studentKey, studentName, studentId, telegramChatId, chatId, telegramUsername, password,
+    } = req.body;
+    const resolvedStudentKey = studentKey || studentId || studentName;
+    const resolvedChatId = telegramChatId || chatId;
+
+    if (!resolvedStudentKey || !resolvedChatId) {
       return res.status(400).json({
         success: false,
         error: "نام دانش‌آموز و شناسه چت تلگرام الزامی است.",
       });
     }
 
-    const cleanChatId = String(telegramChatId).trim();
-    const cleanKey = String(studentKey).trim().toLowerCase();
+    const cleanChatId = String(resolvedChatId).trim();
+    const cleanKey = String(resolvedStudentKey).trim().toLowerCase();
 
     const idx = serverStudentStore.students.findIndex(
       (s) =>
@@ -4106,6 +4115,28 @@ app.post("/api/students/telegram-link", async (req, res) => {
       return res.status(403).json({
         success: false,
         error: "دسترسی حساب شما به حالت تعلیق درآمده است.",
+      });
+    }
+
+    // Ownership check: without this, anyone who merely knows (or guesses) a
+    // student's name could hijack that student's account by linking their
+    // own Telegram chat ID to it — and start receiving that student's bot
+    // messages/reports. Require either a valid counselor session or the
+    // student's own password.
+    const counselorSession = getValidCounselorSession(req.headers.authorization);
+    const targetStoredHash = targetStudent.passwordHash || targetStudent.password || "1234";
+    const isStudentPassValid = password ? verifyPassword(String(password).trim(), targetStoredHash) : false;
+
+    if (!counselorSession && !isStudentPassValid) {
+      addSecurityAuditLog(
+        "unauthorized_telegram_link_attempt",
+        "warning",
+        `تلاش غیرمجاز برای اتصال تلگرام به حساب «${targetStudent.name}» بدون رمز عبور صحیح`,
+        clientIp
+      );
+      return res.status(403).json({
+        success: false,
+        error: "برای اتصال تلگرام، وارد کردن رمز عبور صحیح حساب دانش‌آموزی الزامی است.",
       });
     }
 
@@ -4329,6 +4360,20 @@ app.get("/api/telegram/polling-status", (req, res) => {
 
 app.get("/api/telegram/activity-logs", (req, res) => {
   const masterUsername = serverStudentStore.telegramBotConfig?.botUsername || currentPollingBotUsername;
+  const session = getValidCounselorSession(req.headers.authorization);
+
+  // Log entries can contain other students' names and message content, so
+  // this must never be exposed to unauthenticated callers. (The student-facing
+  // "live activity" widget will simply show no feed until this is redesigned
+  // to return only the requesting student's own messages.)
+  if (!session) {
+    return res.json({
+      isActive: isPollingActive,
+      botUsername: masterUsername,
+      logs: [],
+    });
+  }
+
   res.json({
     isActive: isPollingActive,
     botUsername: masterUsername,
@@ -4846,7 +4891,10 @@ app.get("/api/students/list", (req, res) => {
     isPasscodeDefault,
     students: sanitizedStudents,
     deletedStudents: serverStudentStore.deletedStudents,
-    usageStats: serverStudentStore.usageStats,
+    // Usage stats (per-student AI message counts) are only relevant to the
+    // counselor dashboard — never send every student's usage data to an
+    // unauthenticated caller.
+    usageStats: isCounselor ? serverStudentStore.usageStats : {},
     announcement: serverStudentStore.counselorConfig.announcement,
     updatedAt: serverStudentStore.updatedAt
   });
@@ -6255,9 +6303,10 @@ async function startServer() {
       }
 
       const zipPath = path.resolve(process.cwd(), "public/project-source.zip");
-      if (!fs.existsSync(zipPath)) {
-        execSync("node scripts/make-zip.js");
-      }
+      // Always rebuild fresh (never serve a cached zip) — a previously cached
+      // copy could have been created before secrets/PII were excluded from
+      // the bundle, and would otherwise keep being served indefinitely.
+      execSync("node scripts/make-zip.js");
       res.download(zipPath, "study-app-source.zip");
     } catch (err: any) {
       res.status(500).json({ error: "خطا در دانلود ZIP: " + err.message });

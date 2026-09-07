@@ -17,6 +17,7 @@ import { CounselorLoginModal } from './components/CounselorLoginModal';
 import { AccountLockoutOverlay } from './components/AccountLockoutOverlay';
 import { StudentLoginOverlay } from './components/StudentLoginOverlay';
 import { Megaphone, ShieldCheck, X } from 'lucide-react';
+import { safeSetItem, capArray } from './utils/safeStorage';
 import { 
   StudentProfile, 
   WeeklySchedule, 
@@ -378,7 +379,7 @@ export default function App() {
       return;
     }
 
-    localStorage.setItem('study_advisor_profile', JSON.stringify(profile));
+    safeSetItem('study_advisor_profile', JSON.stringify(profile));
     setStudents((prev) => {
       const exists = prev.some((s) => s.name === profile.name || (s.id && s.id === profile.id));
       if (!exists) return prev; // DO NOT auto-create unlisted profiles!
@@ -405,7 +406,7 @@ export default function App() {
         if (data.success && isMounted) {
           if (data.counselorPasscode) {
             setAdminPasscode(data.counselorPasscode);
-            localStorage.setItem('study_advisor_admin_passcode', data.counselorPasscode);
+            safeSetItem('study_advisor_admin_passcode', data.counselorPasscode);
           }
           const serverStudents: StudentProfile[] = data.students || [];
           const serverDeleted: string[] = data.deletedStudents || [];
@@ -428,7 +429,7 @@ export default function App() {
           const currentDeleted = combinedDeleted.filter(
             (d) => !activeServerIdentifiers.has(d.toLowerCase())
           );
-          localStorage.setItem('study_advisor_deleted_students', JSON.stringify(currentDeleted));
+          safeSetItem('study_advisor_deleted_students', JSON.stringify(currentDeleted));
 
           // 2. Check URL parameter matching
           let urlStudentParam: string | null = null;
@@ -485,7 +486,7 @@ export default function App() {
               setFinalExamItems(loadStudentSlice('study_advisor_final_exam', stKey, INITIAL_FINAL_EXAM_ITEMS));
 
               setProfile(updatedActiveProfile);
-              localStorage.setItem('study_advisor_profile', JSON.stringify(updatedActiveProfile));
+              safeSetItem('study_advisor_profile', JSON.stringify(updatedActiveProfile));
             }
           } else if (urlStudentParam && serverStudents.length > 0) {
             // URL parameter was provided, but does not match any registered student on server!
@@ -587,7 +588,7 @@ export default function App() {
               if (!exists) updatedList.push(ss);
             });
 
-            localStorage.setItem('study_advisor_students', JSON.stringify(updatedList));
+            safeSetItem('study_advisor_students', JSON.stringify(updatedList));
             return updatedList;
           });
         }
@@ -611,67 +612,74 @@ export default function App() {
 
   useEffect(() => {
     const key = profile.id || profile.name;
-    localStorage.setItem(`study_advisor_schedule_${key}`, JSON.stringify(schedule));
-    localStorage.setItem('study_advisor_schedule', JSON.stringify(schedule));
+    safeSetItem(`study_advisor_schedule_${key}`, JSON.stringify(schedule));
+    safeSetItem('study_advisor_schedule', JSON.stringify(schedule));
   }, [schedule, profile]);
 
   useEffect(() => {
     const key = profile.id || profile.name;
-    localStorage.setItem(`study_advisor_exam_budget_${key}`, JSON.stringify(examBudget));
-    localStorage.setItem('study_advisor_exam_budget', JSON.stringify(examBudget));
+    safeSetItem(`study_advisor_exam_budget_${key}`, JSON.stringify(examBudget));
+    safeSetItem('study_advisor_exam_budget', JSON.stringify(examBudget));
   }, [examBudget, profile]);
 
   useEffect(() => {
     const key = profile.id || profile.name;
-    localStorage.setItem(`study_advisor_reports_${key}`, JSON.stringify(reports));
-    localStorage.setItem('study_advisor_reports', JSON.stringify(reports));
+    // Nightly reports accumulate forever otherwise — cap to the most recent
+    // 300 entries so this alone can't exhaust the localStorage quota.
+    const capped = capArray(reports, 300);
+    safeSetItem(`study_advisor_reports_${key}`, JSON.stringify(capped));
+    safeSetItem('study_advisor_reports', JSON.stringify(capped));
   }, [reports, profile]);
 
   useEffect(() => {
     const key = profile.id || profile.name;
-    localStorage.setItem(`study_advisor_spaced_cards_${key}`, JSON.stringify(spacedCards));
-    localStorage.setItem('study_advisor_spaced_cards', JSON.stringify(spacedCards));
+    const capped = capArray(spacedCards, 500);
+    safeSetItem(`study_advisor_spaced_cards_${key}`, JSON.stringify(capped));
+    safeSetItem('study_advisor_spaced_cards', JSON.stringify(capped));
   }, [spacedCards, profile]);
 
   useEffect(() => {
     const key = profile.id || profile.name;
-    localStorage.setItem(`study_advisor_feynman_${key}`, JSON.stringify(feynmanSessions));
-    localStorage.setItem('study_advisor_feynman', JSON.stringify(feynmanSessions));
+    const capped = capArray(feynmanSessions, 300);
+    safeSetItem(`study_advisor_feynman_${key}`, JSON.stringify(capped));
+    safeSetItem('study_advisor_feynman', JSON.stringify(capped));
   }, [feynmanSessions, profile]);
 
   useEffect(() => {
     const key = profile.id || profile.name;
-    localStorage.setItem(`study_advisor_exam_errors_${key}`, JSON.stringify(errors));
-    localStorage.setItem('study_advisor_exam_errors', JSON.stringify(errors));
+    const capped = capArray(errors, 500);
+    safeSetItem(`study_advisor_exam_errors_${key}`, JSON.stringify(capped));
+    safeSetItem('study_advisor_exam_errors', JSON.stringify(capped));
   }, [errors, profile]);
 
   useEffect(() => {
     const key = profile.id || profile.name;
-    localStorage.setItem(`study_advisor_focus_sessions_${key}`, JSON.stringify(focusSessions));
-    localStorage.setItem('study_advisor_focus_sessions', JSON.stringify(focusSessions));
+    const capped = capArray(focusSessions, 300);
+    safeSetItem(`study_advisor_focus_sessions_${key}`, JSON.stringify(capped));
+    safeSetItem('study_advisor_focus_sessions', JSON.stringify(capped));
   }, [focusSessions, profile]);
 
   useEffect(() => {
     const key = profile.id || profile.name;
-    localStorage.setItem(`study_advisor_topic_mastery_${key}`, JSON.stringify(masteryRecords));
-    localStorage.setItem('study_advisor_topic_mastery', JSON.stringify(masteryRecords));
+    safeSetItem(`study_advisor_topic_mastery_${key}`, JSON.stringify(masteryRecords));
+    safeSetItem('study_advisor_topic_mastery', JSON.stringify(masteryRecords));
   }, [masteryRecords, profile]);
 
   // Master Admin & Multi-Student Persistence
   useEffect(() => {
-    localStorage.setItem('study_advisor_students', JSON.stringify(students));
+    safeSetItem('study_advisor_students', JSON.stringify(students));
   }, [students]);
 
   useEffect(() => {
-    localStorage.setItem('study_advisor_admin_passcode', adminPasscode);
+    safeSetItem('study_advisor_admin_passcode', adminPasscode);
   }, [adminPasscode]);
 
   useEffect(() => {
-    localStorage.setItem('study_advisor_counselor_announcement', counselorAnnouncement);
+    safeSetItem('study_advisor_counselor_announcement', counselorAnnouncement);
   }, [counselorAnnouncement]);
 
   useEffect(() => {
-    localStorage.setItem('study_advisor_counselor_directive', counselorSystemDirective);
+    safeSetItem('study_advisor_counselor_directive', counselorSystemDirective);
   }, [counselorSystemDirective]);
 
   const handleSelectStudent = (targetInput: string | StudentProfile, isFromAdmin: boolean = false) => {
@@ -709,13 +717,13 @@ export default function App() {
       const updatedDeleted = currentDeleted.filter(
         (d) => d.toLowerCase() !== studentWithId.name.toLowerCase() && d.toLowerCase() !== (studentWithId.id && studentWithId.id.toLowerCase())
       );
-      localStorage.setItem('study_advisor_deleted_students', JSON.stringify(updatedDeleted));
+      safeSetItem('study_advisor_deleted_students', JSON.stringify(updatedDeleted));
     } catch (e) {
       console.error(e);
     }
     const nextStudents = [...students, studentWithId];
     setStudents(nextStudents);
-    localStorage.setItem('study_advisor_students', JSON.stringify(nextStudents));
+    safeSetItem('study_advisor_students', JSON.stringify(nextStudents));
     syncStudentsToServer(nextStudents);
     handleAuthenticateStudent(studentWithId.name);
     handleSelectStudent(studentWithId, true);
@@ -731,7 +739,7 @@ export default function App() {
     try {
       const currentDeleted = getDeletedStudentsList();
       updatedDeletedList = Array.from(new Set([...currentDeleted, nameToDelete, idToDelete].filter(Boolean)));
-      localStorage.setItem('study_advisor_deleted_students', JSON.stringify(updatedDeletedList));
+      safeSetItem('study_advisor_deleted_students', JSON.stringify(updatedDeletedList));
     } catch (e) {
       console.error(e);
     }
@@ -742,7 +750,7 @@ export default function App() {
         (s.id ? s.id.toLowerCase() !== idToDelete.toLowerCase() : true)
     );
     setStudents(updated);
-    localStorage.setItem('study_advisor_students', JSON.stringify(updated));
+    safeSetItem('study_advisor_students', JSON.stringify(updated));
 
     // Call server dedicated delete endpoint immediately
     try {
@@ -802,7 +810,7 @@ export default function App() {
         id: `st_${Date.now()}`
       };
       setStudents([defaultStudent]);
-      localStorage.setItem('study_advisor_students', JSON.stringify([defaultStudent]));
+      safeSetItem('study_advisor_students', JSON.stringify([defaultStudent]));
       handleSelectStudent(defaultStudent);
     } else {
       if (profile.name === nameToDelete || profile.id === idToDelete) {
@@ -814,13 +822,13 @@ export default function App() {
   const handleUpdateStudentProfile = (updatedStudent: StudentProfile) => {
     setStudents((prev) => {
       const next = prev.map((s) => (s.name === updatedStudent.name || (s.id && s.id === updatedStudent.id) ? updatedStudent : s));
-      localStorage.setItem('study_advisor_students', JSON.stringify(next));
+      safeSetItem('study_advisor_students', JSON.stringify(next));
       syncStudentsToServer(next);
       return next;
     });
     if (profile.name === updatedStudent.name || (profile.id && profile.id === updatedStudent.id)) {
       setProfile(updatedStudent);
-      localStorage.setItem('study_advisor_profile', JSON.stringify(updatedStudent));
+      safeSetItem('study_advisor_profile', JSON.stringify(updatedStudent));
     }
   };
 
@@ -830,10 +838,10 @@ export default function App() {
 
   const handleSaveProfile = (updatedProfile: StudentProfile) => {
     setProfile(updatedProfile);
-    localStorage.setItem('study_advisor_profile', JSON.stringify(updatedProfile));
+    safeSetItem('study_advisor_profile', JSON.stringify(updatedProfile));
     setStudents((prev) => {
       const next = prev.map((s) => (s.name === updatedProfile.name || (s.id && s.id === updatedProfile.id) ? updatedProfile : s));
-      localStorage.setItem('study_advisor_students', JSON.stringify(next));
+      safeSetItem('study_advisor_students', JSON.stringify(next));
       syncStudentsToServer(next);
       return next;
     });
@@ -995,7 +1003,7 @@ export default function App() {
   const handleCounselorLoginSuccess = () => {
     setIsAdminUnlocked(true);
     if (typeof window !== 'undefined') {
-      localStorage.setItem('study_advisor_counselor_logged_in', 'true');
+      safeSetItem('study_advisor_counselor_logged_in', 'true');
     }
     setIsCounselorLoginModalOpen(false);
     setIsCounselorPortalOpen(true);
@@ -1039,17 +1047,17 @@ export default function App() {
         counselorAnnouncement={counselorAnnouncement}
         onUpdateCounselorAnnouncement={(newAnnounce) => {
           setCounselorAnnouncement(newAnnounce);
-          localStorage.setItem('study_advisor_counselor_announcement', newAnnounce);
+          safeSetItem('study_advisor_counselor_announcement', newAnnounce);
         }}
         counselorSystemDirective={counselorSystemDirective}
         onUpdateCounselorSystemDirective={(newDirective) => {
           setCounselorSystemDirective(newDirective);
-          localStorage.setItem('study_advisor_counselor_directive', newDirective);
+          safeSetItem('study_advisor_counselor_directive', newDirective);
         }}
         adminPasscode={adminPasscode}
         onUpdateAdminPasscode={(newPass) => {
           setAdminPasscode(newPass);
-          localStorage.setItem('study_advisor_admin_passcode', newPass);
+          safeSetItem('study_advisor_admin_passcode', newPass);
         }}
         onExitCounselorPortal={() => setIsCounselorPortalOpen(false)}
       />
@@ -1270,7 +1278,7 @@ export default function App() {
           onOpenMasterAdmin={handleOpenCounselorGateway}
           onSwitchProfile={(newProf) => {
             setProfile(newProf);
-            localStorage.setItem('study_advisor_profile', JSON.stringify(newProf));
+            safeSetItem('study_advisor_profile', JSON.stringify(newProf));
             handleAuthenticateStudent(newProf.name);
           }}
         />
