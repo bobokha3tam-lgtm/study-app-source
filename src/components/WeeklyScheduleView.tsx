@@ -1,4 +1,6 @@
 import React, { useState } from 'react';
+import { SleepAdjustmentCard } from './SleepAdjustmentCard';
+import { SleepAdjustmentPlan, computeTodaysSleepTarget } from '../utils/sleepAdjustment';
 import { 
   Calendar, 
   Sparkles, 
@@ -66,6 +68,29 @@ export const WeeklyScheduleView: React.FC<WeeklyScheduleViewProps> = ({
   const [activeDayIndex, setActiveDayIndex] = useState<number>(0);
   const [viewMode, setViewMode] = useState<'daily' | 'weekly_grid'>('daily');
   const [blockFilter, setBlockFilter] = useState<BlockFilterType>('all');
+
+  // Gradual sleep-schedule adjustment
+  const sleepPlanKey = `study_advisor_sleep_plan_${profile.id || profile.name}`;
+  const [sleepPlan, setSleepPlan] = useState<SleepAdjustmentPlan | null>(() => {
+    try {
+      const saved = localStorage.getItem(sleepPlanKey);
+      return saved ? JSON.parse(saved) : null;
+    } catch {
+      return null;
+    }
+  });
+  const handleSaveSleepPlan = (plan: SleepAdjustmentPlan | null) => {
+    setSleepPlan(plan);
+    try {
+      if (plan) {
+        localStorage.setItem(sleepPlanKey, JSON.stringify(plan));
+      } else {
+        localStorage.removeItem(sleepPlanKey);
+      }
+    } catch (e) {
+      console.error(e);
+    }
+  };
   
   // AI Generation State
   const [isGenerating, setIsGenerating] = useState<boolean>(false);
@@ -520,12 +545,22 @@ export const WeeklyScheduleView: React.FC<WeeklyScheduleViewProps> = ({
         // ignore
       }
 
+      let effectiveProfile = profile;
+      let sleepAdjustmentNote = '';
+      if (sleepPlan) {
+        const todaysTarget = computeTodaysSleepTarget(sleepPlan);
+        effectiveProfile = { ...profile, wakeTime: todaysTarget.wakeTime, sleepTime: todaysTarget.sleepTime };
+        sleepAdjustmentNote = todaysTarget.isComplete
+          ? `دانش‌آموز به هدف تنظیم خواب خودش رسیده: بیداری ${todaysTarget.wakeTime}، خواب ${todaysTarget.sleepTime}. برنامه رو دقیقاً از همین ساعت بیداری شروع کن.`
+          : `دانش‌آموز در حال تنظیم تدریجی ساعت خواب است (روز ${todaysTarget.dayNumber}). امروز دقیقاً باید ساعت ${todaysTarget.wakeTime} بیدار شود و ساعت ${todaysTarget.sleepTime} بخوابد — نه ساعت قبلی. برنامه امروز و این هفته را دقیقاً از همین ساعت بیداری شروع کن و بعد از ساعت خواب جدید هیچ بلوک مطالعه‌ای قرار نده.`;
+      }
+
       const response = await fetch('/api/advisor/generate-schedule', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ 
-          profile, 
-          focusNotes, 
+          profile: effectiveProfile, 
+          focusNotes: sleepAdjustmentNote ? `${focusNotes}\n\n${sleepAdjustmentNote}` : focusNotes, 
           examBudget, 
           reasoningMode, 
           examErrors, 
@@ -619,6 +654,9 @@ export const WeeklyScheduleView: React.FC<WeeklyScheduleViewProps> = ({
 
   return (
     <div className="space-y-6 animate-fadeIn pb-12">
+      {/* Gradual Sleep Schedule Adjustment */}
+      <SleepAdjustmentCard plan={sleepPlan} onSavePlan={handleSaveSleepPlan} />
+
       {/* Toast Notification */}
       {toastMessage && (
         <div className="fixed bottom-6 right-6 z-50 bg-stone-900 text-white px-4 py-2.5 rounded-xl shadow-2xl text-xs font-bold border border-stone-700 flex items-center gap-2 animate-slideUp">
