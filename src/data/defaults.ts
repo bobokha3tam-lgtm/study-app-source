@@ -12,14 +12,15 @@ export const DEFAULT_STUDENT_PROFILE: StudentProfile = {
   strongSubjects: ['حسابان (مشتق و توابع)', 'فیزیک (الکتریسیته و مغناطیس)'],
   weakSubjects: ['گسسته (نظریه اعداد و همنهشتی)', 'هندسه ۳ (مقاطع مخروطی و ماتریس)', 'فیزیک (حرکت‌شناسی و سقوط آزاد)'],
   schoolOrWorkHours: 'شنبه تا چهارشنبه صبح‌ها مدرسه (تا ساعت ۱۳:۳۰)',
-  additionalNotes: 'داوطلب کنکور ریاضی؛ مباحث هندسه و گسسته زمان‌بر هستند و نیاز به برنامه‌ریزی هفتگی دقیق مطابق بودجه‌بندی آزمون قلم‌چی/ماز دارم.'
+  additionalNotes: 'داوطلب کنکور؛ مباحث نیازمند برنامه‌ریزی هفتگی دقیق مطابق بودجه‌بندی آزمون‌های آنلاین کشوری ماز و هدف‌گذاری تراز بالای ۱۱ هزار است.'
 };
 
 export const DEFAULT_EXAM_BUDGET: ExamBudget = {
-  examName: 'قلم‌چی (آزمون آزمایشی)',
-  examDate: 'جمعه پیش‌رو',
-  targetGoalText: 'تراز بالای ۶۶۰۰ و درصد حسابان بالای ۶۵٪',
-  syllabusDetails: 'حسابان: کاربرد مشتق (اکسترمم‌ها و بهینه‌سازی)؛ هندسه ۳: مقاطع مخروطی بیضی؛ گسسته: نظریه اعداد و همنهشتی؛ فیزیک: حرکت با شتاب ثابت و سقوط آزاد؛ شیمی: اسیدها و بازها',
+  examName: 'آزمون آنلاین کشوری ماز - مرحله ۱ (۲۷ شهریور)',
+  examDate: 'جمعه ۲۷ شهریور ۱۴۰۵',
+  dateGregorian: '2026-09-18',
+  targetGoalText: 'تراز ماز بالای ۱۱,۰۰۰ (مقیاس ۱۲,۰۰۰ کشوری) با درصد اختصاصی بالای ۷۰٪',
+  syllabusDetails: 'حسابان ۲: یادآوری مشتق جبری و مثلثاتی، خط مماس و قائم و آهنگ تغییرات (ص ۵۴ تا ۸۸)؛ فیزیک ۳: حرکت بر خط راست با شتاب ثابت و نمودارهای v-t و سقوط آزاد (ص ۱ تا ۳۶)؛ گسسته: نظریه اعداد، تقسیم‌پذیری و معادلات همنهشتی (ص ۱ تا ۲۹)؛ هندسه ۳: ماتریس، اعمال ماتریسی و دترمینان ۳×۳ (ص ۱ تا ۳۴)؛ شیمی ۳: پاک‌کننده‌های صابونی، اسیدها و بازهای آرنیوس و تعادل pH (ص ۱ تا ۳۵)',
   selectedTopics: [
     'مشتق و کاربرد مشتق (حسابان ۲)',
     'هندسه ۳ (پایه دوازدهم)',
@@ -64,8 +65,10 @@ export const DEFAULT_EXAM_BUDGET: ExamBudget = {
     {
       id: 'td-1',
       subject: 'حسابان ۲',
-      chapter: 'فصل ۳: کاربرد مشتق',
-      subtopic: 'اکسترمم‌های نسبی، نقاط بحرانی و مسائل بهینه‌سازی',
+      chapter: 'فصل ۳ و ۴: مشتق و آهنگ تغییرات',
+      subtopic: 'مفهوم هندسی مشتق، خط مماس و قائم، مشتق‌گیری زنجیره‌ای و آهنگ تغییرات لحظه‌ای',
+      pagesOrScope: 'صفحات ۵۴ تا ۸۸ کتاب درسی حسابان ۲',
+      testTypes: 'تست‌های تالیفی آزمون ماز، سوالات کنکور سراسری ۱۴۰۰ تا ۱۴۰۴، تست‌های دام‌دار مشتق‌ناپذیری',
       difficulty: 'بسیار چالشی و دام‌دار',
       targetTestCount: 140,
       completedTestCount: 45,
@@ -76,7 +79,9 @@ export const DEFAULT_EXAM_BUDGET: ExamBudget = {
       id: 'td-2',
       subject: 'فیزیک ۳',
       chapter: 'فصل ۱: حرکت بر خط راست',
-      subtopic: 'سقوط آزاد دومتحد و نمودارهای v-t چند ضابطه‌ای',
+      subtopic: 'حرکت با شتاب ثابت، نمودارهای مکان-زمان و سرعت-زمان، خط ترمز و سقوط آزاد اجسام',
+      pagesOrScope: 'صفحات ۱ تا ۳۶ کتاب درسی فیزیک ۳',
+      testTypes: 'تحلیل نمودارهای متحرک‌های هم‌زمان، محاسبات بدون فرمول زمان، تست‌های دو مرحله‌ای سقوط',
       difficulty: 'سخت',
       targetTestCount: 110,
       completedTestCount: 30,
@@ -87,7 +92,9 @@ export const DEFAULT_EXAM_BUDGET: ExamBudget = {
       id: 'td-3',
       subject: 'گسسته',
       chapter: 'فصل ۱: نظریه اعداد',
-      subtopic: 'معادلات همنهشتی خطی و بخش‌پذیری بر مبنای پیمانه',
+      subtopic: 'بخش‌پذیری، قضیه تقسیم، استقرای ریاضی و معادلات همنهشتی خطی در مجموعه اعداد صحیح',
+      pagesOrScope: 'صفحات ۱ تا ۲۹ کتاب درسی گسسته',
+      testTypes: 'یافتن باقیمانده توان‌های بزرگ به روش اویلر و فرما، حل معادله خطی دیوفانتی، تست‌های مفهومی عاد کردن',
       difficulty: 'سخت',
       targetTestCount: 80,
       completedTestCount: 20,
@@ -97,8 +104,10 @@ export const DEFAULT_EXAM_BUDGET: ExamBudget = {
     {
       id: 'td-4',
       subject: 'هندسه ۳',
-      chapter: 'فصل ۲: مقاطع مخروطی',
-      subtopic: 'معادله بیضی، ویژگی کانون‌ها و خروج از مرکز',
+      chapter: 'فصل ۱: ماتریس و کاربردها',
+      subtopic: 'ضرب ماتریس‌ها، خواص ترانهاده و ماتریس متقارن، وارون‌پذیری و دترمینان ۳×۳ با ساروس',
+      pagesOrScope: 'صفحات ۱ تا ۳۴ کتاب درسی هندسه ۳',
+      testTypes: 'دترمینان ماتریس‌های متوالی، حل دستگاه معادلات خطی به روش کرامر، تست‌های نمادین ماتریسی',
       difficulty: 'متوسط',
       targetTestCount: 75,
       completedTestCount: 15,
@@ -109,7 +118,9 @@ export const DEFAULT_EXAM_BUDGET: ExamBudget = {
       id: 'td-5',
       subject: 'شیمی ۳',
       chapter: 'فصل ۱: مولکول‌ها در خدمت تندرستی',
-      subtopic: 'مسائل اسید-باز، ثابت یونش Ka و بافرها',
+      subtopic: 'پاک‌کننده‌های صابونی و سنتزی، کلوییدها، اسیدها و بازهای آرنیوس، ثابت یونش Ka و محاسبات pH',
+      pagesOrScope: 'صفحات ۱ تا ۳۵ کتاب درسی شیمی ۳',
+      testTypes: 'مسائل مقایسه قدرت اسیدی و درصد یونش، محاسبات لگاریتمی غلظت یون هیدرونیوم، مسائل خنثی‌شدن',
       difficulty: 'بسیار چالشی و دام‌دار',
       targetTestCount: 75,
       completedTestCount: 10,
@@ -132,91 +143,88 @@ export const COMMON_OBSTACLES = [
 export const SAMPLE_INITIAL_SCHEDULE: WeeklySchedule = {
   id: 'week-1',
   createdAt: new Date().toISOString(),
-  weekTitle: 'هفته آمادگی آزمون: تسلط بر کاربرد مشتق، سقوط آزاد و نظریه اعداد',
+  weekTitle: 'هفته آمادگی آزمون جامع تابستانه ماز (۲۷ شهریور)',
   totalPlannedHours: 51.5,
-  strategySummary: 'پوشش دقیق بودجه‌بندی آزمون کانون در دروس تحلیلی رشته ریاضی با تفکیک پارت‌های هندسه و گسسته و تست‌زنی سرعتی فیزیک و شیمی.',
+  strategySummary: 'جمع‌بندی کامل پایه دهم و یازدهم به همراه پیش‌خوانی مباحث دوازدهم مطابق برنامه آزمون تابستانه ماز.',
   days: [
     {
       dayName: 'شنبه',
       targetHours: 7.5,
-      dailyTip: 'شروع پرانرژی با یادگیری مفهومی کاربرد مشتق؛ برای محاسبات وقت بگذار.',
+      dailyTip: 'شروع با مرور پایه‌ها: تست‌های ترکیبی دنباله‌ها و مجموعه‌ها رو جدی بگیر.',
       blocks: [
-        { id: 's1', timeSlot: '۱۵:۰۰ - ۱۶:۳۰', subject: 'حسابان ۲', topic: 'کاربرد مشتق: نقاط بحرانی و اکسترمم‌های نسبی + ۱۵ تست آموزشی', durationMinutes: 90, type: 'concept', isDone: true },
-        { id: 's2', timeSlot: '۱۶:۴۵ - ۱۸:۱۵', subject: 'فیزیک ۳', topic: 'حرکت بر خط راست: نمودار سرعت-زمان و شتاب ثابت', durationMinutes: 90, type: 'test', isDone: true },
-        { id: 's3', timeSlot: '۱۸:۴۵ - ۲۰:۱۵', subject: 'شیمی ۳', topic: 'اسیدها و بازها: مفاهیم pH و ثابت یونش Ka', durationMinutes: 90, type: 'concept', isDone: false },
-        { id: 's4', timeSlot: '۲۰:۳۰ - ۲۲:۰۰', subject: 'گسسته', topic: 'نظریه اعداد: بخش‌پذیری و خواص عاد کردن', durationMinutes: 90, type: 'concept', isDone: false },
-        { id: 's5', timeSlot: '۲۲:۱۵ - ۲۳:۰۰', subject: 'مرور شبانه', topic: 'مرور فرمول‌های مشتق و فلش‌کارت‌های لایتنر', durationMinutes: 45, type: 'review', isDone: false },
+        { id: 's1', timeSlot: '۱۵:۰۰ - ۱۶:۳۰', subject: 'ریاضی ۱ و حسابان ۱', topic: 'مجموعه، الگو و دنباله + ۱۵ تست آموزشی', durationMinutes: 90, type: 'concept', isDone: true },
+        { id: 's2', timeSlot: '۱۶:۴۵ - ۱۸:۱۵', subject: 'فیزیک ۱ (پایه دهم)', topic: 'ویژگی‌های فیزیکی مواد (فشار و ارشمیدس)', durationMinutes: 90, type: 'test', isDone: true },
+        { id: 's3', timeSlot: '۱۸:۴۵ - ۲۰:۱۵', subject: 'شیمی ۱ (پایه دهم)', topic: 'استوکیومتری واکنش و غلظت', durationMinutes: 90, type: 'concept', isDone: false },
+        { id: 's4', timeSlot: '۲۰:۳۰ - ۲۲:۰۰', subject: 'پیش‌خوانی (اختیاری)', topic: 'شروع تابع (حسابان ۲) یا ماتریس (هندسه ۳)', durationMinutes: 90, type: 'concept', isDone: false },
+        { id: 's5', timeSlot: '۲۲:۱۵ - ۲۳:۰۰', subject: 'مرور شبانه', topic: 'مرور فرمول‌های غلظت و فشار', durationMinutes: 45, type: 'review', isDone: false },
       ]
     },
     {
       dayName: 'یکشنبه',
       targetHours: 7.0,
-      dailyTip: 'ترسیم شکل در هندسه ۳ کلید حل تست‌های مقاطع مخروطی است.',
+      dailyTip: 'هندسه پایه نیاز به رسم شکل دقیق داره؛ روی قضیه کسینوس‌ها مسلط شو.',
       blocks: [
-        { id: 'u1', timeSlot: '۱۵:۳۰ - ۱۷:۰۰', subject: 'هندسه ۳', topic: 'مقاطع مخروطی: معادله بیضی، کانون‌ها و خروج از مرکز', durationMinutes: 90, type: 'concept', isDone: false },
-        { id: 'u2', timeSlot: '۱۷:۱۵ - ۱۸:۴۵', subject: 'حسابان ۲', topic: 'تست‌زنی زمان‌دار مشتق و اکسترمم‌های مطلق (۲۰ تست)', durationMinutes: 90, type: 'test', isDone: false },
-        { id: 'u3', timeSlot: '۱۹:۱۵ - ۲۰:۴۵', subject: 'فیزیک ۳', topic: 'سقوط آزاد اجسام و تندی حدی چترباز (مخصوص ریاضی)', durationMinutes: 90, type: 'test', isDone: false },
-        { id: 'u4', timeSlot: '۲۱:۰۰ - ۲۲:۰۰', subject: 'شیمی ۳', topic: 'حل مسائل استوکیومتری اسید-باز بدون ماشین حساب', durationMinutes: 60, type: 'test', isDone: false },
+        { id: 'u1', timeSlot: '۱۵:۳۰ - ۱۷:۰۰', subject: 'هندسه ۲', topic: 'روابط طولی در مثلث (قضیه سینوس‌ها و کسینوس‌ها)', durationMinutes: 90, type: 'concept', isDone: false },
+        { id: 'u2', timeSlot: '۱۷:۱۵ - ۱۸:۴۵', subject: 'ریاضی ۱ و حسابان ۱', topic: 'تست‌زنی زمان‌دار الگو و دنباله (۲۰ تست)', durationMinutes: 90, type: 'test', isDone: false },
+        { id: 'u3', timeSlot: '۱۹:۱۵ - ۲۰:۴۵', subject: 'فیزیک ۲ (پایه یازدهم)', topic: 'مغناطیس و نیروی وارد بر بار الکتریکی', durationMinutes: 90, type: 'test', isDone: false },
+        { id: 'u4', timeSlot: '۲۱:۰۰ - ۲۲:۰۰', subject: 'شیمی ۲ (پایه یازدهم)', topic: 'حل مسائل آنتالپی و سرعت', durationMinutes: 60, type: 'test', isDone: false },
       ]
     },
     {
       dayName: 'دوشنبه',
       targetHours: 7.5,
-      dailyTip: 'در معادلات همنهشتی گسسته، شرط ب.م.م را اول چک کن.',
+      dailyTip: 'آمار و احتمال رو دست کم نگیر؛ واریانس و انحراف معیار تست‌خیز هستن.',
       blocks: [
-        { id: 'm1', timeSlot: '۱۵:۳۰ - ۱۷:۰۰', subject: 'گسسته', topic: 'معادلات همنهشتی خطی ax = b (mod m) + ۱۵ تست کنکور', durationMinutes: 90, type: 'concept', isDone: false },
-        { id: 'm2', timeSlot: '۱۷:۱۵ - ۱۸:۴۵', subject: 'حسابان ۲', topic: 'جهت تقعر، نقطه عطف و رسم نمودار توابع', durationMinutes: 90, type: 'concept', isDone: false },
-        { id: 'm3', timeSlot: '۱۹:۱۵ - ۲۰:۴۵', subject: 'فیزیک ۲ یازدهم', topic: 'الکتریسیته و مدارهای چندحلقه کیرشهف', durationMinutes: 90, type: 'test', isDone: false },
-        { id: 'm4', timeSlot: '۲۱:۰۰ - ۲۲:۱۵', subject: 'مرور و تثبیت', topic: 'بررسی تست‌های نشان‌دار شنبه و یکشنبه', durationMinutes: 75, type: 'review', isDone: false },
+        { id: 'm1', timeSlot: '۱۵:۳۰ - ۱۷:۰۰', subject: 'آمار و احتمال', topic: 'شاخص‌های پراکندگی (واریانس و انحراف معیار) + ۱۵ تست', durationMinutes: 90, type: 'concept', isDone: false },
+        { id: 'm2', timeSlot: '۱۷:۱۵ - ۱۸:۴۵', subject: 'فیزیک ۲ (پایه یازدهم)', topic: 'تست‌های القای الکترومغناطیسی و قانون فارادی', durationMinutes: 90, type: 'concept', isDone: false },
+        { id: 'm3', timeSlot: '۱۹:۱۵ - ۲۰:۴۵', subject: 'شیمی ۱ (پایه دهم)', topic: 'تست‌های ترکیبی استوکیومتری و غلظت مولی', durationMinutes: 90, type: 'test', isDone: false },
+        { id: 'm4', timeSlot: '۲۱:۰۰ - ۲۲:۳۰', subject: 'پیش‌خوانی (اختیاری)', topic: 'شروع حرکت بر خط راست (فیزیک ۳)', durationMinutes: 90, type: 'concept', isDone: false },
       ]
     },
     {
       dayName: 'سه‌شنبه',
       targetHours: 7.0,
-      dailyTip: 'تست‌های دوپینگی شیمی: سرعت تبدیل مول و جرم مولی را بالا ببر.',
+      dailyTip: 'امروز روی نقاط ضعف شیمی و هندسه تمرکز کن.',
       blocks: [
-        { id: 't1', timeSlot: '۱۵:۳۰ - ۱۷:۰۰', subject: 'شیمی ۳', topic: 'مسائل بافر و تیتراسیون اسید-باز', durationMinutes: 90, type: 'test', isDone: false },
-        { id: 't2', timeSlot: '۱۷:۱۵ - ۱۸:۴۵', subject: 'هندسه ۳', topic: 'تست‌های ترکیبی بیضی و دایره در مقاطع مخروطی', durationMinutes: 90, type: 'test', isDone: false },
-        { id: 't3', timeSlot: '۱۹:۱۵ - ۲۰:۳۰', subject: 'حسابان', topic: 'تست‌های سرعتی مبحث مثلثات پایه (کمان‌های دو برابر)', durationMinutes: 75, type: 'test', isDone: false },
-        { id: 't4', timeSlot: '۲۱:۰۰ - ۲۲:۱۵', subject: 'فیزیک', topic: 'تست‌های سقوط آزاد دو متحرکه با اختلاف زمان پرتاب', durationMinutes: 75, type: 'test', isDone: false },
+        { id: 't1', timeSlot: '۱۵:۳۰ - ۱۷:۰۰', subject: 'شیمی ۲ (پایه یازدهم)', topic: 'پلیمرها و درشت‌مولکول‌ها (مرور حفظیات)', durationMinutes: 90, type: 'concept', isDone: false },
+        { id: 't2', timeSlot: '۱۷:۱۵ - ۱۸:۴۵', subject: 'هندسه ۲', topic: 'تست‌زنی جامع روابط طولی در مثلث', durationMinutes: 90, type: 'test', isDone: false },
+        { id: 't3', timeSlot: '۱۹:۱۵ - ۲۰:۴۵', subject: 'فیزیک ۱ (پایه دهم)', topic: 'تست‌زنی لوله‌های U شکل و ارشمیدس', durationMinutes: 90, type: 'test', isDone: false },
+        { id: 't4', timeSlot: '۲۱:۰۰ - ۲۲:۰۰', subject: 'مرور شبانه', topic: 'فلش‌کارت‌های حفظیات شیمی', durationMinutes: 60, type: 'review', isDone: false },
       ]
     },
     {
       dayName: 'چهارشنبه',
       targetHours: 7.5,
-      dailyTip: 'تمام سرفصل‌های آزمون باید تا امشب بسته شده باشند.',
+      dailyTip: 'نصف هفته گذشته! حالا وقت تست‌های ترکیبی و پوششی ریاضیاته.',
       blocks: [
-        { id: 'w1', timeSlot: '۱۵:۳۰ - ۱۷:۰۰', subject: 'گسسته', topic: 'ترکیب نظریه اعداد با ویژگی‌های ب.م.م و ک.م.م', durationMinutes: 90, type: 'test', isDone: false },
-        { id: 'w2', timeSlot: '۱۷:۱۵ - ۱۸:۴۵', subject: 'فیزیک ۳', topic: 'تست‌های جامع حرکت‌شناسی مطابق بودجه‌بندی آزمون', durationMinutes: 90, type: 'test', isDone: false },
-        { id: 'w3', timeSlot: '۱۹:۱۵ - ۲۰:۴۵', subject: 'حسابان ۲', topic: 'مسائل بهینه‌سازی حجم و مساحت کاربرد مشتق', durationMinutes: 90, type: 'test', isDone: false },
-        { id: 'w4', timeSlot: '۲۱:۰۰ - ۲۲:۰۰', subject: 'شیمی', topic: 'مرور حفظیات خط‌به‌خط کتاب درسی', durationMinutes: 60, type: 'review', isDone: false },
+        { id: 'w1', timeSlot: '۱۵:۳۰ - ۱۷:۰۰', subject: 'ریاضی ۱ و حسابان ۱', topic: 'تست‌های ترکیبی سخت و زمان‌دار', durationMinutes: 90, type: 'test', isDone: false },
+        { id: 'w2', timeSlot: '۱۷:۱۵ - ۱۸:۴۵', subject: 'آمار و احتمال', topic: 'تست‌های احتمال و پیشامدهای مستقل', durationMinutes: 90, type: 'test', isDone: false },
+        { id: 'w3', timeSlot: '۱۹:۱۵ - ۲۰:۴۵', subject: 'پیش‌خوانی (اختیاری)', topic: 'شروع نظریه اعداد (گسسته دوازدهم)', durationMinutes: 90, type: 'concept', isDone: false },
+        { id: 'w4', timeSlot: '۲۱:۰۰ - ۲۲:۳۰', subject: 'فیزیک ۲ (پایه یازدهم)', topic: 'آزمون ۳۰ سؤالی مغناطیس و القا', durationMinutes: 90, type: 'test', isDone: false },
       ]
     },
     {
       dayName: 'پنج‌شنبه',
-      targetHours: 8.5,
-      dailyTip: 'پنج‌شنبه روز یادگیری مبحث جدید نیست؛ فقط مرور فرمول‌ها و رفع اشکال.',
+      targetHours: 8.0,
+      dailyTip: 'پنجشنبه روز آزمون‌های جامع و پوشش کاستی‌هاست.',
       blocks: [
-        { id: 'th1', timeSlot: '۰۸:۳۰ - ۱۰:۰۰', subject: 'آزمون شبیه‌ساز ۱', topic: 'دفترچه اختصاصی ریاضی (حسابان، هندسه، گسسته) ۴۰ تست زمان‌دار', durationMinutes: 90, type: 'test', isDone: false },
-        { id: 'th2', timeSlot: '۱۰:۳۰ - ۱۲:۰۰', subject: 'تحلیل آزمون ۱', topic: 'بررسی تک‌تک تست‌های غلط و نزده دفترچه ریاضی', durationMinutes: 90, type: 'review', isDone: false },
-        { id: 'th3', timeSlot: '۱۴:۳۰ - ۱۶:۰۰', subject: 'آزمون شبیه‌ساز ۲', topic: 'دفترچه فیزیک و شیمی زمان‌دار ۳۵ تست', durationMinutes: 90, type: 'test', isDone: false },
-        { id: 'th4', timeSlot: '۱۶:۳۰ - ۱۸:۳۰', subject: 'باکس جبرانی', topic: 'باکس آزاد برای جبران عقب‌افتادگی‌های طول هفته', durationMinutes: 120, type: 'compensatory', isDone: false },
-        { id: 'th5', timeSlot: '۱۹:۳۰ - ۲۱:۰۰', subject: 'مرور فرمول‌ها', topic: 'تورق سریع فرمول‌های فیزیک و قضایای هندسه + خواب آرام قبل از ۲۳:۰۰', durationMinutes: 90, type: 'review', isDone: false },
+        { id: 'th1', timeSlot: '۰۸:۰۰ - ۱۲:۰۰', subject: 'آزمون جامع تابستانه', topic: 'آزمون شبیه‌ساز ماز - مرحله ۱', durationMinutes: 240, type: 'test', isDone: false },
+        { id: 'th2', timeSlot: '۱۴:۰۰ - ۱۶:۰۰', subject: 'تحلیل آزمون', topic: 'تحلیل دقیق تست‌های غلط و نزده هندسه و فیزیک', durationMinutes: 120, type: 'test', isDone: false },
+        { id: 'th3', timeSlot: '۱۶:۳۰ - ۱۸:۳۰', subject: 'شیمی ۱ و ۲', topic: 'تحلیل تست‌های غلط و نزده شیمی', durationMinutes: 120, type: 'test', isDone: false },
       ]
     },
     {
       dayName: 'جمعه',
-      targetHours: 6.0,
-      dailyTip: 'حفظ آرامش در سر جلسه آزمون؛ ابتدا تست‌های ساده را شکار کن!',
+      targetHours: 4.5,
+      dailyTip: 'استراحت کافی داشته باش، ولی مرور فرمول‌ها یادت نره.',
       blocks: [
-        { id: 'f1', timeSlot: '۰۷:۴۵ - ۱۲:۰۰', subject: 'آزمون آزمایشی', topic: 'شرکت در آزمون اصلی قلم‌چی/ماز با تمرکز کامل', durationMinutes: 240, type: 'test', isDone: false },
-        { id: 'f2', timeSlot: '۱۶:۰۰ - ۱۸:۰۰', subject: 'تحلیل کارنامه و تست‌ها', topic: 'ثبت علت تست‌های غلط (بی‌دقتی، محاسباتی یا علمی) در دفترچه خودآموز', durationMinutes: 120, type: 'review', isDone: false },
-        { id: 'f3', timeSlot: '۱۸:۳۰ - ۲۱:۰۰', subject: 'استراحت و شارژ روحی', topic: 'ورزش، تفریح با خانواده و تنظیم ذهن برای هفته نو', durationMinutes: 150, type: 'compensatory', isDone: false },
+        { id: 'f1', timeSlot: '۱۰:۰۰ - ۱۱:۳۰', subject: 'جبران عقب‌ماندگی', topic: 'تکمیل تست‌های باقی‌مانده فیزیک', durationMinutes: 90, type: 'test', isDone: false },
+        { id: 'f2', timeSlot: '۱۱:۴۵ - ۱۳:۱۵', subject: 'جبران عقب‌ماندگی', topic: 'تکمیل تست‌های باقی‌مانده آمار و احتمال', durationMinutes: 90, type: 'concept', isDone: false },
+        { id: 'f3', timeSlot: '۱۸:۰۰ - ۱۹:۳۰', subject: 'پیش‌خوانی (اختیاری)', topic: 'مولکول‌ها در خدمت تندرستی (شیمی ۳)', durationMinutes: 90, type: 'concept', isDone: false },
       ]
     }
   ]
 };
-
 export const INITIAL_SAMPLE_LOGS: NightlyReport[] = [
   {
     id: 'log-1',

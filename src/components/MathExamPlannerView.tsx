@@ -1,5 +1,5 @@
 import React, { useState, useRef } from 'react';
-import { 
+import { Download,     
   Target, 
   Calendar, 
   BookOpen, 
@@ -31,17 +31,27 @@ import {
   Gauge,
   MessageSquare,
   Send
-} from 'lucide-react';
-import { StudentProfile, WeeklySchedule, ExamBudget, WeeklyClass, TopicExamDetail } from '../types';
-import { 
+, ListTree , Rocket } from 'lucide-react';
+import {  StudentProfile, WeeklySchedule, ExamBudget, WeeklyClass, TopicExamDetail, ScheduledExam } from '../types';
+import {  
   getCurriculumByField, 
   getMasterBooksByField, 
   STREAM_OPTIONS, 
   normalizeStream, 
   StreamType 
 } from '../data/curriculumData';
-import { KonkurAdvancedSearchModal } from './KonkurAdvancedSearchModal';
-import { getLiveDaysUntilExam } from '../utils/examCountdown';
+import {  KonkurAdvancedSearchModal } from './KonkurAdvancedSearchModal';
+import {  
+  getLiveDaysUntilExam, 
+  getPersianTodayInfo, 
+  calculateExamCountdown, 
+  toPersianDigits,
+  sanitizeAndAdvanceExamBudget 
+} from '../utils/examCountdown';
+import {  ScheduledExamsSection } from './ScheduledExamsSection';
+import {  getDefaultScheduledExams } from '../data/scheduledExamsData';
+import {  ExamBudgetSection } from './ExamBudgetSection';
+import {  WeeklyClassesSection } from './WeeklyClassesSection';
 
 interface MathExamPlannerViewProps {
   profile: StudentProfile;
@@ -50,6 +60,7 @@ interface MathExamPlannerViewProps {
   onApplyNewSchedule: (schedule: WeeklySchedule) => void;
   onSwitchToScheduleTab: () => void;
   onSwitchToProToolsTab?: (subTab?: 'postmortem' | 'focus_speed' | 'heatmap' | 'trap_quizzer' | 'final_exam') => void;
+  defaultSubTab?: 'calendar' | 'classes' | 'atlas' | 'sources' | 'calculator';
 }
 
 export function MathExamPlannerView({
@@ -59,13 +70,98 @@ export function MathExamPlannerView({
   onApplyNewSchedule,
   onSwitchToScheduleTab,
   onSwitchToProToolsTab,
+  defaultSubTab = 'calendar',
 }: MathExamPlannerViewProps) {
-  // Navigation sub-tabs inside curriculum view
-  const [activeSubTab, setActiveSubTab] = useState<'atlas' | 'sources' | 'calculator'>('atlas');
+  // Navigation sub-tabs inside curriculum view: 'calendar' (برنامه و بودجه آزمون) | 'classes' (کلاس‌های هفتگی) | 'atlas' | 'sources' | 'calculator'
+  const [activeSubTab, setActiveSubTab] = useState<'calendar' | 'classes' | 'atlas' | 'sources' | 'calculator'>(defaultSubTab);
   const [selectedSubjectFilter, setSelectedSubjectFilter] = useState<string>('all');
+  const [selectedGradeFilter, setSelectedGradeFilter] = useState<string>('all');
+  const [selectedDifficultyFilter, setSelectedDifficultyFilter] = useState<string>('all');
   const [searchQuery, setSearchQuery] = useState<string>('');
   const [expandedTopicId, setExpandedTopicId] = useState<string | null>('calc-func');
   const [isAdvSearchModalOpen, setIsAdvSearchModalOpen] = useState<boolean>(false);
+  const [completedSubtopics, setCompletedSubtopics] = useState<Record<string, boolean>>(() => {
+    try {
+      const saved = localStorage.getItem('advisor_completed_subtopics');
+      return saved ? JSON.parse(saved) : {};
+    } catch {
+      return {};
+    }
+  });
+
+  const toggleSubtopicCompleted = (subtopicKey: string) => {
+    setCompletedSubtopics(prev => {
+      const updated = { ...prev, [subtopicKey]: !prev[subtopicKey] };
+      try {
+        localStorage.setItem('advisor_completed_subtopics', JSON.stringify(updated));
+      } catch {}
+      return updated;
+    });
+  };
+
+  // Live Today Information & Exam Countdown
+  const todayInfo = getPersianTodayInfo();
+  const activeExamCountdown = calculateExamCountdown(examBudget);
+
+  // Stream detection
+  const detectedStream = normalizeStream(profile?.fieldOfStudy);
+  const [currentStream, setCurrentStream] = useState<StreamType>(detectedStream);
+
+  // Scheduled exams list (persisted in examBudget or loaded defaults)
+  const [scheduledExams, setScheduledExams] = useState<ScheduledExam[]>(() => {
+    if (examBudget.scheduledExams && examBudget.scheduledExams.length > 0) {
+      return examBudget.scheduledExams;
+    }
+    return getDefaultScheduledExams(detectedStream);
+  });
+
+  const handleSelectActiveExam = (exam: ScheduledExam) => {
+    const countdown = calculateExamCountdown({
+      examName: exam.examName,
+      examDate: exam.examDate,
+      dateGregorian: exam.dateGregorian,
+    });
+
+    const daysLeftVal = countdown.daysLeft !== null ? Math.max(0, countdown.daysLeft) : undefined;
+
+    const updatedBudget: ExamBudget = {
+      ...examBudget,
+      activeExamId: exam.id,
+      examName: exam.examName,
+      examDate: exam.examDate,
+      dateGregorian: exam.dateGregorian,
+      daysUntilExam: daysLeftVal,
+      daysUntilExamSetAt: new Date().toISOString(),
+      targetGoalText: exam.targetGoalText || examBudget.targetGoalText || 'تراز بالای ۶۸۰۰',
+      syllabusDetails: exam.syllabusSummary || examBudget.syllabusDetails,
+      selectedTopics: exam.selectedTopics?.length ? exam.selectedTopics : examBudget.selectedTopics,
+      topicDetails: exam.topicDetails?.length ? exam.topicDetails : examBudget.topicDetails,
+      totalTargetTests: exam.totalTargetTests || examBudget.totalTargetTests || 450,
+      scheduledExams: scheduledExams,
+    };
+
+    onUpdateExamBudget(updatedBudget);
+    setExtractSuccess(`آزمون «${exam.examName}» به عنوان آزمون هدف بعدی انتخاب شد. اطلاعات و مباحث آن برای چیدن برنامه اعمال گردید!`);
+  };
+
+  const handleAddCustomExam = (newExam: ScheduledExam) => {
+    const updated = [newExam, ...scheduledExams];
+    setScheduledExams(updated);
+    onUpdateExamBudget({
+      ...examBudget,
+      scheduledExams: updated,
+    });
+    setExtractSuccess(`آزمون جدید «${newExam.examName}» به تقویم آزمون‌ها افزوده شد.`);
+  };
+
+  const handleDeleteCustomExam = (examId: string) => {
+    const updated = scheduledExams.filter(e => e.id !== examId);
+    setScheduledExams(updated);
+    onUpdateExamBudget({
+      ...examBudget,
+      scheduledExams: updated,
+    });
+  };
 
   // Generation state
   const [isGenerating, setIsGenerating] = useState<boolean>(false);
@@ -131,6 +227,8 @@ export function MathExamPlannerView({
   const [newTdSubject, setNewTdSubject] = useState<string>('حسابان ۲');
   const [newTdChapter, setNewTdChapter] = useState<string>('کاربرد مشتق');
   const [newTdSubtopic, setNewTdSubtopic] = useState<string>('اکسترمم‌ها و بهینه‌سازی');
+  const [newTdPagesOrScope, setNewTdPagesOrScope] = useState<string>('صفحات ۵۴ تا ۸۸ کتاب درسی');
+  const [newTdTestTypes, setNewTdTestTypes] = useState<string>('تست‌های تالیفی ماز + تست‌های سراسری ۱۴۰۰ تا ۱۴۰۴');
   const [newTdDifficulty, setNewTdDifficulty] = useState<'آسان و روان' | 'متوسط' | 'سخت' | 'بسیار چالشی و دام‌دار'>('بسیار چالشی و دام‌دار');
   const [newTdTargetTests, setNewTdTargetTests] = useState<number>(120);
   const [newTdImportance, setNewTdImportance] = useState<'پرتکرار و حیاتی (تضمین درصد)' | 'متوسط' | 'کم‌تکرار اما رتبه‌ساز'>('پرتکرار و حیاتی (تضمین درصد)');
@@ -322,6 +420,8 @@ export function MathExamPlannerView({
       subject: newTdSubject,
       chapter: newTdChapter,
       subtopic: newTdSubtopic,
+      pagesOrScope: newTdPagesOrScope.trim() || undefined,
+      testTypes: newTdTestTypes.trim() || undefined,
       difficulty: newTdDifficulty,
       targetTestCount: newTdTargetTests,
       completedTestCount: 0,
@@ -351,14 +451,14 @@ export function MathExamPlannerView({
     });
   };
 
-  // Stream selector state
-  const [currentStream, setCurrentStream] = useState<StreamType>(() => normalizeStream(profile.fieldOfStudy));
-
   // Sync stream if profile field of study changes externally
   React.useEffect(() => {
     if (profile.fieldOfStudy) {
       const normalized = normalizeStream(profile.fieldOfStudy);
       setCurrentStream(normalized);
+      if (!examBudget.scheduledExams || examBudget.scheduledExams.length === 0) {
+        setScheduledExams(getDefaultScheduledExams(normalized));
+      }
     }
   }, [profile.fieldOfStudy]);
 
@@ -387,8 +487,13 @@ export function MathExamPlannerView({
   // Filtered curriculum topics with multi-dimensional search
   const filteredTopics = activeCurriculum.filter((topic) => {
     const matchesSubject = selectedSubjectFilter === 'all' || topic.subject === selectedSubjectFilter;
+    const matchesGrade = selectedGradeFilter === 'all' || topic.grade.includes(selectedGradeFilter);
+    const matchesDifficulty = selectedDifficultyFilter === 'all' || topic.difficulty.includes(selectedDifficultyFilter);
+
+    if (!matchesSubject || !matchesGrade || !matchesDifficulty) return false;
+
     const q = searchQuery.trim().toLowerCase();
-    if (!q) return matchesSubject;
+    if (!q) return true;
 
     const matchesQuery = 
       (topic.chapter || '').toLowerCase().includes(q) ||
@@ -403,7 +508,7 @@ export function MathExamPlannerView({
         (b.description || '').toLowerCase().includes(q) ||
         (b.recommendedFor || '').toLowerCase().includes(q)
       ));
-    return matchesSubject && matchesQuery;
+    return matchesQuery;
   });
 
   // Calculate aggregated test volume for selected topics in exam budget
@@ -601,7 +706,7 @@ export function MathExamPlannerView({
   const handleLoadSamplePreset = (presetType: 'ghalamchi' | 'maze' | 'sanjesh') => {
     if (presetType === 'ghalamchi') {
       onUpdateExamBudget({
-        examName: 'آزمون کانون فرهنگی آموزش (قلم‌چی) - مرحله ۵',
+        examName: 'آزمون آنلاین کشوری ماز - مرحله ۱',
         examDate: 'جمعه ۱۸ آبان',
         targetGoalText: 'تراز بالای ۶۸۰۰ با درصد حسابان بالای ۶۵٪',
         syllabusDetails: 'حسابان دوازدهم: مشتق توابع تا سر کاربرد مشتق؛ فیزیک دوازدهم: حرکت با شتاب ثابت و سقوط آزاد؛ هندسه دوازدهم: ماتریس و دترمینان؛ گسسته: نظریه اعداد و همنهشتی؛ شیمی: استوکیومتری و واکنش‌های شیمیایی',
@@ -944,16 +1049,24 @@ export function MathExamPlannerView({
               <Sparkles className="w-3.5 h-3.5" />
               <span>مرکز تخصصی منابع، بانک تست و بودجه‌بندی کنکور سراسری</span>
             </div>
-            <span className="px-2.5 py-0.5 rounded-full bg-amber-500/20 text-amber-300 text-[11px] font-bold border border-amber-500/30">
+            <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-stone-800 text-emerald-300 text-xs font-bold border border-stone-700">
+              <Calendar className="w-3.5 h-3.5 text-emerald-400" />
+              <span>امروز: {todayInfo.formattedFullDate}</span>
+            </div>
+            <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-amber-500/20 text-amber-300 text-xs font-bold border border-amber-500/30">
+              <Target className="w-3.5 h-3.5 text-amber-400" />
+              <span>آزمون بعدی: {examBudget.examName || 'پیش‌رو'} ({activeExamCountdown.isToday ? 'امروز روز آزمون است!' : `⏳ ${toPersianDigits(activeExamCountdown.daysLeft ?? todayInfo.daysUntilThisFriday)} روز مانده`})</span>
+            </div>
+            <span className="px-2.5 py-0.5 rounded-full bg-stone-800 text-stone-300 text-[11px] font-bold border border-stone-700">
               رشته فعال: {activeStreamOption.name}
             </span>
           </div>
 
           <h1 className="text-2xl sm:text-3xl font-bold tracking-tight text-white mb-2">
-            اطلس سرفصل‌ها، بانک منابع و آپلود برنامه آزمون
+            تقویم آزمون‌ها، اطلس سرفصل‌ها و چیدن برنامه هوشمند
           </h1>
           <p className="text-stone-300 text-sm leading-relaxed">
-            بهترین منابع کنکور (خیلی سبز، پینوکیو، نشر الگو، آی‌کیو گاج، مبتکران، مهروماه و موج آزمون) را برای تک‌تک مباحث {activeStreamOption.name} پیدا کن، به روش مطالعه آن‌ها مسلط شو، تعداد تست‌های لازم را حساب کن و برنامه هوشمند آزمونت را دریافت نما.
+            بودجه‌بندی آزمون‌های آزمایشی سراسری (قلم‌چی، ماز، سنجش و گزینه دو) را مشاهده کنید، مباحث آزمون هدف بعدیتان را تعیین نمایید و با یک کلیک برنامه هفتگی و روزانه کاملاً شخصی‌سازی‌شده تحویل بگیرید.
           </p>
 
           {/* Stream Selector Pill Buttons */}
@@ -989,6 +1102,30 @@ export function MathExamPlannerView({
 
         {/* View Switcher Pills */}
         <div className="flex flex-wrap items-center gap-2 mt-6 pt-5 border-t border-stone-700/60">
+          <button
+            onClick={() => setActiveSubTab('calendar')}
+            className={`inline-flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-semibold transition-all cursor-pointer ${
+              activeSubTab === 'calendar'
+                ? 'bg-emerald-500 text-stone-950 shadow-sm font-bold'
+                : 'bg-stone-800/80 hover:bg-stone-800 text-stone-300 border border-stone-700'
+            }`}
+          >
+            <Calendar className="w-4 h-4" />
+            <span>برنامه و بودجه‌بندی آزمون</span>
+          </button>
+
+          <button
+            onClick={() => setActiveSubTab('classes')}
+            className={`inline-flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-semibold transition-all cursor-pointer ${
+              activeSubTab === 'classes'
+                ? 'bg-emerald-500 text-stone-950 shadow-sm font-bold'
+                : 'bg-stone-800/80 hover:bg-stone-800 text-stone-300 border border-stone-700'
+            }`}
+          >
+            <School className="w-4 h-4" />
+            <span>کلاس‌های هفتگی و مدرسه ({(examBudget.weeklyClasses || []).length})</span>
+          </button>
+
           <button
             onClick={() => setActiveSubTab('atlas')}
             className={`inline-flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-semibold transition-all cursor-pointer ${
@@ -1064,977 +1201,28 @@ export function MathExamPlannerView({
         )}
       </div>
 
-      {/* SECTION 1: EXAM SCHEDULE UPLOAD & SYLLABUS SCANNER */}
-      <div className="bg-white border border-stone-200 rounded-2xl p-6 shadow-sm">
-        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 pb-5 border-b border-stone-100">
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-xl bg-emerald-50 text-emerald-700 flex items-center justify-center font-bold">
-              <FileUp className="w-5 h-5" />
-            </div>
-            <div>
-              <h2 className="text-lg font-bold text-stone-900 flex items-center gap-2">
-                <span>بخش آپلود و اسکن هوشمند برنامه آزمون</span>
-                <span className="text-[11px] font-semibold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-full border border-emerald-200">
-                  پردازش با هوش مصنوعی
-                </span>
-              </h2>
-              <p className="text-xs text-stone-500">
-                عکس دفترچه آزمون (قلم‌چی، ماز، سنجش، گزینه دو یا مدرسه) یا فایل متنی‌ات را آپلود کن تا سرفصل‌ها و تست‌های مورد نیاز خودکار استخراج شوند.
-              </p>
-            </div>
-          </div>
+      {/* SUB-VIEW 0: EXAM SCHEDULE & SYLLABUS BUDGET */}
+      {activeSubTab === 'calendar' && (
+        <ExamBudgetSection
+          profile={profile}
+          examBudget={examBudget}
+          currentStream={currentStream}
+          onUpdateExamBudget={onUpdateExamBudget}
+          onApplyNewSchedule={onApplyNewSchedule}
+          onSwitchToScheduleTab={onSwitchToScheduleTab}
+          onSwitchToClassesTab={() => setActiveSubTab('classes')}
+        />
+      )}
 
-          {/* Preset Buttons */}
-          <div className="flex items-center gap-2 text-xs">
-            <span className="text-stone-400 text-[11px]">یا بارگذاری نمونه:</span>
-            <button
-              onClick={() => handleLoadSamplePreset('ghalamchi')}
-              className="px-2.5 py-1 rounded-lg bg-stone-100 hover:bg-stone-200 text-stone-700 text-[11px] font-medium transition cursor-pointer"
-            >
-              قلم‌چی
-            </button>
-            <button
-              onClick={() => handleLoadSamplePreset('maze')}
-              className="px-2.5 py-1 rounded-lg bg-stone-100 hover:bg-stone-200 text-stone-700 text-[11px] font-medium transition cursor-pointer"
-            >
-              ماز
-            </button>
-            <button
-              onClick={() => handleLoadSamplePreset('sanjesh')}
-              className="px-2.5 py-1 rounded-lg bg-stone-100 hover:bg-stone-200 text-stone-700 text-[11px] font-medium transition cursor-pointer"
-            >
-              سنجش
-            </button>
-          </div>
-        </div>
-
-        {/* Drag and Drop Zone */}
-        <div className="mt-5">
-          <div
-            onDragOver={(e) => { e.preventDefault(); setIsDragging(true); }}
-            onDragLeave={() => setIsDragging(false)}
-            onDrop={(e) => {
-              e.preventDefault();
-              setIsDragging(false);
-              if (e.dataTransfer.files && e.dataTransfer.files[0]) {
-                handleFileChange(e.dataTransfer.files[0]);
-              }
-            }}
-            className={`border-2 border-dashed rounded-2xl p-6 sm:p-8 text-center transition-all cursor-pointer ${
-              isDragging
-                ? 'border-emerald-500 bg-emerald-50/50'
-                : uploadedFile
-                ? 'border-emerald-300 bg-stone-50/60'
-                : 'border-stone-200 hover:border-emerald-400 bg-stone-50/30'
-            }`}
-            onClick={() => fileInputRef.current?.click()}
-          >
-            <input
-              ref={fileInputRef}
-              type="file"
-              accept="image/*,.pdf,.txt,.doc,.docx"
-              className="hidden"
-              onChange={(e) => {
-                if (e.target.files && e.target.files[0]) {
-                  handleFileChange(e.target.files[0]);
-                }
-              }}
-            />
-
-            {uploadedFile ? (
-              <div className="flex flex-col sm:flex-row items-center justify-between gap-4 max-w-xl mx-auto bg-white p-4 rounded-xl border border-stone-200 shadow-xs">
-                <div className="flex items-center gap-3">
-                  {uploadedFile.previewUrl ? (
-                    <img 
-                      src={uploadedFile.previewUrl} 
-                      alt="Exam preview" 
-                      className="w-14 h-14 object-cover rounded-lg border border-stone-200 shadow-xs shrink-0" 
-                    />
-                  ) : (
-                    <div className="w-12 h-12 rounded-lg bg-emerald-50 text-emerald-700 flex items-center justify-center shrink-0">
-                      <FileText className="w-6 h-6" />
-                    </div>
-                  )}
-                  <div className="text-right">
-                    <p className="text-xs font-bold text-stone-900 truncate max-w-[200px] sm:max-w-xs">
-                      {uploadedFile.name}
-                    </p>
-                    <p className="text-[11px] text-stone-500">
-                      حجم فایل: {uploadedFile.size}
-                    </p>
-                  </div>
-                </div>
-
-                <div className="flex items-center gap-2">
-                  <button
-                    type="button"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      handleProcessUploadedSyllabus();
-                    }}
-                    disabled={isExtractingSyllabus}
-                    className="px-4 py-2 rounded-xl bg-emerald-700 hover:bg-emerald-800 text-white text-xs font-semibold flex items-center gap-1.5 shadow-xs transition-all disabled:opacity-50 cursor-pointer"
-                  >
-                    {isExtractingSyllabus ? (
-                      <>
-                        <div className="w-3.5 h-3.5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-                        <span>در حال اسکن و استخراج هوشمند...</span>
-                      </>
-                    ) : (
-                      <>
-                        <Sparkles className="w-3.5 h-3.5" />
-                        <span>شروع استخراج هوشمند سرفصل‌ها</span>
-                      </>
-                    )}
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      setUploadedFile(null);
-                      setExtractError(null);
-                      setExtractSuccess(null);
-                    }}
-                    className="p-2 rounded-lg text-stone-400 hover:text-rose-600 transition cursor-pointer"
-                    title="حذف فایل"
-                  >
-                    <X className="w-4 h-4" />
-                  </button>
-                </div>
-              </div>
-            ) : (
-              <div className="flex flex-col items-center">
-                <div className="w-12 h-12 rounded-2xl bg-emerald-50 text-emerald-700 flex items-center justify-center mb-3">
-                  <Upload className="w-6 h-6" />
-                </div>
-                <p className="text-sm font-bold text-stone-800 mb-1">
-                  عکس یا فایل پی‌دی‌اف بودجه‌بندی آزمون را اینجا بکشید یا کلیک کنید
-                </p>
-                <p className="text-xs text-stone-500 max-w-md">
-                  پشتیبانی از فرمت‌های تصویری (اسکرین‌شات جدول آزمون قلم‌چی، ماز و سنجش)، فایل‌های PDF و متنی
-                </p>
-              </div>
-            )}
-          </div>
-        </div>
-
-        {/* Feedback messages */}
-        {extractSuccess && (
-          <div className="mt-4 p-3.5 bg-emerald-50 border border-emerald-200 text-emerald-800 rounded-xl text-xs font-medium flex items-center gap-2">
-            <CheckCircle className="w-4 h-4 text-emerald-600 shrink-0" />
-            <span>{extractSuccess}</span>
-          </div>
-        )}
-
-        {extractError && (
-          <div className="mt-4 p-3.5 bg-rose-50 border border-rose-200 text-rose-800 rounded-xl text-xs font-medium flex items-center gap-2">
-            <AlertCircle className="w-4 h-4 text-rose-600 shrink-0" />
-            <span>{extractError}</span>
-          </div>
-        )}
-
-        {/* Exam Budget Form Fields */}
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mt-5 pt-5 border-t border-stone-100">
-          <div>
-            <label className="block text-xs font-semibold text-stone-700 mb-1">
-              نام آزمون آزمایشی
-            </label>
-            <input
-              type="text"
-              value={examBudget.examName}
-              onChange={(e) => onUpdateExamBudget({ ...examBudget, examName: e.target.value })}
-              placeholder="مثال: قلم‌چی / ماز / سنجش / گزینه دو / مدرسه"
-              className="w-full text-xs sm:text-sm px-3.5 py-2.5 rounded-xl border border-stone-200 bg-stone-50 focus:bg-white focus:outline-none focus:ring-2 focus:ring-emerald-500 text-stone-800"
-            />
-          </div>
-
-          <div>
-            <label className="block text-xs font-semibold text-stone-700 mb-1">
-              تاریخ برگزاری آزمون
-            </label>
-            <input
-              type="text"
-              value={examBudget.examDate}
-              onChange={(e) => onUpdateExamBudget({ ...examBudget, examDate: e.target.value })}
-              placeholder="مثال: جمعه هفته آینده / ۱۸ آبان"
-              className="w-full text-xs sm:text-sm px-3.5 py-2.5 rounded-xl border border-stone-200 bg-stone-50 focus:bg-white focus:outline-none focus:ring-2 focus:ring-emerald-500 text-stone-800"
-            />
-          </div>
-
-          <div>
-            <label className="block text-xs font-semibold text-stone-700 mb-1">
-              چند روز تا آزمون فرصت دارید؟
-            </label>
-            <input
-              type="number"
-              min={1}
-              max={365}
-              value={examBudget.daysUntilExam ?? ''}
-              onChange={(e) => {
-                const raw = e.target.value;
-                const parsed = raw === '' ? undefined : Math.max(1, Math.min(365, parseInt(raw, 10) || 1));
-                onUpdateExamBudget({
-                  ...examBudget,
-                  daysUntilExam: parsed,
-                  daysUntilExamSetAt: parsed === undefined ? undefined : new Date().toISOString(),
-                });
-              }}
-              placeholder="مثال: ۶"
-              className="w-full text-xs sm:text-sm px-3.5 py-2.5 rounded-xl border border-stone-200 bg-stone-50 focus:bg-white focus:outline-none focus:ring-2 focus:ring-emerald-500 text-stone-800"
-            />
-            <p className="text-[10px] text-stone-400 mt-1">
-              {(() => {
-                const live = getLiveDaysUntilExam(examBudget);
-                if (live === null) return 'این عدد مبنای محاسبه‌ی تعداد تست و ساعت مطالعه روزانه است.';
-                if (live === 0) return '📍 امروز روز آزمون است!';
-                return `📍 در حال حاضر ${live} روز واقعی تا آزمون باقی مانده.`;
-              })()}
-            </p>
-          </div>
-
-          <div>
-            <label className="block text-xs font-semibold text-stone-700 mb-1">
-              هدف‌گذاری تراز یا درصد مدنظر
-            </label>
-            <input
-              type="text"
-              value={examBudget.targetGoalText}
-              onChange={(e) => onUpdateExamBudget({ ...examBudget, targetGoalText: e.target.value })}
-              placeholder="مثال: تراز بالای ۶۵۰۰ یا درصد حسابان بالای ۶۰٪"
-              className="w-full text-xs sm:text-sm px-3.5 py-2.5 rounded-xl border border-stone-200 bg-stone-50 focus:bg-white focus:outline-none focus:ring-2 focus:ring-emerald-500 text-stone-800"
-            />
-          </div>
-        </div>
-
-        {/* Text area for syllabus details */}
-        <div className="mt-4">
-          <label className="block text-xs font-semibold text-stone-700 mb-1">
-            خلاصه و جزئیات بودجه‌بندی استخراج‌شده یا دست‌نویس:
-          </label>
-          <textarea
-            rows={2}
-            value={examBudget.syllabusDetails}
-            onChange={(e) => onUpdateExamBudget({ ...examBudget, syllabusDetails: e.target.value })}
-            placeholder="مثال: حسابان: از صفحه ۴۵ تا ۷۰ کاربرد مشتق؛ فیزیک: حرکت با شتاب ثابت و سقوط آزاد؛ گسسته: همنهشتی؛ هندسه: مقاطع مخروطی بیضی"
-            className="w-full text-xs sm:text-sm px-3.5 py-2.5 rounded-xl border border-stone-200 bg-stone-50 focus:bg-white focus:outline-none focus:ring-2 focus:ring-emerald-500 text-stone-800"
-          />
-        </div>
-
-        {/* Selected Topics Badges */}
-        {examBudget.selectedTopics.length > 0 && (
-          <div className="mt-4 pt-4 border-t border-stone-100">
-            <div className="flex items-center justify-between mb-2">
-              <span className="text-xs font-bold text-stone-700 flex items-center gap-1.5">
-                <Target className="w-3.5 h-3.5 text-emerald-600" />
-                <span>مباحث انتخاب‌شده برای این آزمون ({examBudget.selectedTopics.length} مبحث):</span>
-              </span>
-              <button
-                onClick={() => onUpdateExamBudget({ ...examBudget, selectedTopics: [] })}
-                className="text-[11px] text-stone-400 hover:text-rose-600 transition cursor-pointer"
-              >
-                پاک کردن همه
-              </button>
-            </div>
-            <div className="flex flex-wrap gap-2">
-              {examBudget.selectedTopics.map((topic) => (
-                <span
-                  key={topic}
-                  className="inline-flex items-center gap-1.5 px-3 py-1 rounded-lg bg-emerald-50 text-emerald-800 border border-emerald-200 text-xs font-medium"
-                >
-                  <span>{topic}</span>
-                  <button
-                    onClick={() => handleToggleTopic(topic)}
-                    className="hover:text-rose-600 font-bold ml-1 cursor-pointer"
-                  >
-                    ×
-                  </button>
-                </span>
-              ))}
-            </div>
-          </div>
-        )}
-
-        {/* SECTION: WEEKLY FIXED CLASSES & TOPIC DIFFICULTY TARGETS */}
-        <div className="mt-6 pt-5 border-t border-stone-100 space-y-6">
-          {/* 1. WEEKLY CLASSES SECTION */}
-          <div className="bg-stone-50/80 rounded-2xl p-4 sm:p-5 border border-stone-200">
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-stone-200">
-              <div className="flex items-center gap-2.5">
-                <div className="w-8 h-8 rounded-lg bg-rose-50 text-rose-700 flex items-center justify-center font-bold">
-                  <School className="w-4 h-4" />
-                </div>
-                <div>
-                  <h3 className="text-xs font-bold text-stone-900 flex items-center gap-2">
-                    <span>کلاس‌های هفتگی ثابت داوطلب</span>
-                    <span className="text-[10px] bg-rose-100 text-rose-800 px-2 py-0.5 rounded-full font-bold">
-                      {(examBudget.weeklyClasses || []).length} کلاس فیکس
-                    </span>
-                  </h3>
-                  <p className="text-[11px] text-stone-500">
-                    می‌توانید فایل PDF یا تصویر برنامه کلاس‌های مدرسه/آموزشگاه/تاملند/ماز را آپلود کنید تا خودکار استخراج شوند.
-                  </p>
-                </div>
-              </div>
-
-              <div className="flex items-center gap-2 flex-wrap self-start sm:self-auto">
-                <button
-                  type="button"
-                  onClick={() => {
-                    setShowClassChatAssistant(!showClassChatAssistant);
-                    if (showClassUploadZone) setShowClassUploadZone(false);
-                    if (showAddClassForm) setShowAddClassForm(false);
-                  }}
-                  className="px-3 py-1.5 rounded-xl bg-violet-700 hover:bg-violet-800 text-white text-xs font-semibold flex items-center gap-1.5 transition cursor-pointer shadow-xs"
-                >
-                  <MessageSquare className="w-3.5 h-3.5" />
-                  <span>{showClassChatAssistant ? 'بستن چت' : 'صحبت با AI (افزودن/حذف کلاس)'}</span>
-                </button>
-
-                <button
-                  type="button"
-                  onClick={() => {
-                    setShowClassUploadZone(!showClassUploadZone);
-                    if (showAddClassForm) setShowAddClassForm(false);
-                    if (showClassChatAssistant) setShowClassChatAssistant(false);
-                  }}
-                  className="px-3 py-1.5 rounded-xl bg-emerald-700 hover:bg-emerald-800 text-white text-xs font-semibold flex items-center gap-1.5 transition cursor-pointer shadow-xs"
-                >
-                  <FileUp className="w-3.5 h-3.5" />
-                  <span>{showClassUploadZone ? 'بستن آپلود' : 'ارسال PDF / عکس کلاس‌ها'}</span>
-                </button>
-
-                <button
-                  type="button"
-                  onClick={() => {
-                    setShowAddClassForm(!showAddClassForm);
-                    if (showClassUploadZone) setShowClassUploadZone(false);
-                    if (showClassChatAssistant) setShowClassChatAssistant(false);
-                  }}
-                  className="px-3 py-1.5 rounded-xl bg-stone-900 text-white hover:bg-stone-800 text-xs font-semibold flex items-center gap-1.5 transition cursor-pointer"
-                >
-                  <Plus className="w-3.5 h-3.5" />
-                  <span>{showAddClassForm ? 'بستن فرم' : 'افزودن دستی'}</span>
-                </button>
-              </div>
-            </div>
-
-            {/* Conversational AI Class Adjustment Box */}
-            {showClassChatAssistant && (
-              <div className="mt-4 p-4 bg-white rounded-xl border border-violet-200 shadow-xs space-y-3 animate-fadeIn">
-                <div className="flex items-center justify-between pb-2 border-b border-violet-100">
-                  <div className="flex items-center gap-2 text-xs font-bold text-violet-900">
-                    <Sparkles className="w-4 h-4 text-violet-600" />
-                    <span>دستیار هوشمند چت برای مدیریت و ویرایش کلاس‌های هفتگی</span>
-                  </div>
-                  <span className="text-[10px] bg-violet-100 text-violet-800 px-2 py-0.5 rounded-md font-semibold">
-                    گفتگوی زنده با هوش مصنوعی
-                  </span>
-                </div>
-
-                {/* Chat Stream View */}
-                <div className="max-h-48 overflow-y-auto space-y-2.5 p-2 bg-stone-50 rounded-lg border border-stone-100 text-xs">
-                  {classChatHistory.map((msg, idx) => (
-                    <div
-                      key={idx}
-                      className={`flex flex-col ${msg.sender === 'user' ? 'items-end' : 'items-start'}`}
-                    >
-                      <div
-                        className={`max-w-[85%] p-2.5 rounded-xl text-xs ${
-                          msg.sender === 'user'
-                            ? 'bg-violet-700 text-white rounded-br-none'
-                            : 'bg-white text-stone-800 border border-stone-200 rounded-bl-none shadow-2xs'
-                        }`}
-                      >
-                        <p className="leading-relaxed">{msg.text}</p>
-                      </div>
-                      <span className="text-[9px] text-stone-400 mt-0.5 px-1">{msg.time}</span>
-                    </div>
-                  ))}
-                  {isClassChatting && (
-                    <div className="flex items-center gap-2 text-stone-500 text-xs p-2">
-                      <RefreshCw className="w-3.5 h-3.5 animate-spin text-violet-600" />
-                      <span>هوش مصنوعی در حال تحلیل و اعمال تغییرات در برنامه کلاس‌هاست...</span>
-                    </div>
-                  )}
-                </div>
-
-                {/* Quick Suggestion Chips */}
-                <div className="flex flex-wrap gap-1.5 pt-1">
-                  {[
-                    'یکشنبه‌ها ساعت ۱۸ تا ۲۰ کلاس ریاضی ماز اضافه کن',
-                    'کلاس فیزیک رو حذف کن',
-                    'پنج‌شنبه‌ها از ۱۶ تا ۱۹ کلاس آزمون حضوری بذار',
-                    'ساعت کلاس حسابان رو بکن ۱۷ تا ۱۹'
-                  ].map((quickText, qIdx) => (
-                    <button
-                      key={qIdx}
-                      type="button"
-                      onClick={() => setClassChatPrompt(quickText)}
-                      className="text-[10px] px-2.5 py-1 rounded-md bg-violet-50 hover:bg-violet-100 text-violet-800 border border-violet-200 transition cursor-pointer"
-                    >
-                      💡 {quickText}
-                    </button>
-                  ))}
-                </div>
-
-                {/* Input Field */}
-                <div className="flex items-center gap-2 pt-1">
-                  <input
-                    type="text"
-                    value={classChatPrompt}
-                    onChange={(e) => setClassChatPrompt(e.target.value)}
-                    onKeyDown={(e) => {
-                      if (e.key === 'Enter') {
-                        e.preventDefault();
-                        handleClassChatSendMessage();
-                      }
-                    }}
-                    placeholder="به زبان ساده بنویسید؛ مثلاً: کلاس شیمی دوشنبه‌ها ساعت ۱۷ تا ۱۹ رو اضافه کن..."
-                    className="flex-1 text-xs px-3 py-2 rounded-lg border border-stone-200 bg-white focus:outline-none focus:ring-2 focus:ring-violet-500"
-                    disabled={isClassChatting}
-                  />
-                  <button
-                    type="button"
-                    onClick={handleClassChatSendMessage}
-                    disabled={!classChatPrompt.trim() || isClassChatting}
-                    className="px-4 py-2 rounded-lg bg-violet-700 hover:bg-violet-800 text-white text-xs font-semibold flex items-center gap-1.5 transition disabled:opacity-50 cursor-pointer"
-                  >
-                    {isClassChatting ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <Send className="w-3.5 h-3.5" />}
-                    <span>ارسال</span>
-                  </button>
-                </div>
-              </div>
-            )}
-
-            {/* Class PDF/Image Upload Dropzone & AI Processing */}
-            {showClassUploadZone && (
-              <div className="mt-4 p-4 bg-white rounded-xl border border-emerald-200 shadow-xs space-y-3 animate-fadeIn">
-                <div className="flex items-center justify-between pb-2 border-b border-stone-100">
-                  <div className="flex items-center gap-2 text-xs font-bold text-emerald-800">
-                    <Sparkles className="w-4 h-4 text-emerald-600" />
-                    <span>آپلود فایل PDF، عکس یا متن برنامه کلاس‌های هفتگی</span>
-                  </div>
-                  <span className="text-[10px] text-stone-400">
-                    پشتیبانی از PDF، عکس (JPG, PNG)، فایل متنی و کپی متن
-                  </span>
-                </div>
-
-                {/* Dropzone */}
-                <div
-                  onDragOver={(e) => { e.preventDefault(); setIsDraggingClassFile(true); }}
-                  onDragLeave={() => setIsDraggingClassFile(false)}
-                  onDrop={(e) => {
-                    e.preventDefault();
-                    setIsDraggingClassFile(false);
-                    if (e.dataTransfer.files && e.dataTransfer.files[0]) {
-                      handleClassFileSelect(e.dataTransfer.files[0]);
-                    }
-                  }}
-                  className={`border-2 border-dashed rounded-xl p-5 text-center transition-all cursor-pointer ${
-                    isDraggingClassFile
-                      ? 'border-emerald-500 bg-emerald-50/60'
-                      : uploadedClassFile
-                      ? 'border-emerald-300 bg-emerald-50/20'
-                      : 'border-stone-200 hover:border-emerald-400 bg-stone-50/50'
-                  }`}
-                  onClick={() => classFileInputRef.current?.click()}
-                >
-                  <input
-                    ref={classFileInputRef}
-                    type="file"
-                    accept="image/*,.pdf,.txt,.doc,.docx"
-                    className="hidden"
-                    onChange={(e) => {
-                      if (e.target.files && e.target.files[0]) {
-                        handleClassFileSelect(e.target.files[0]);
-                      }
-                    }}
-                  />
-
-                  {uploadedClassFile ? (
-                    <div className="flex flex-col sm:flex-row items-center justify-between gap-3 bg-white p-3 rounded-lg border border-stone-200">
-                      <div className="flex items-center gap-2.5">
-                        <div className="w-9 h-9 rounded-lg bg-emerald-100 text-emerald-800 flex items-center justify-center shrink-0">
-                          <FileText className="w-4 h-4" />
-                        </div>
-                        <div className="text-right">
-                          <p className="text-xs font-bold text-stone-900 truncate max-w-[220px]">
-                            {uploadedClassFile.name}
-                          </p>
-                          <p className="text-[10px] text-stone-500">
-                            حجم فایل: {uploadedClassFile.size} • فرمت: {uploadedClassFile.type}
-                          </p>
-                        </div>
-                      </div>
-
-                      <div className="flex items-center gap-2">
-                        <button
-                          type="button"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            handleProcessUploadedClasses();
-                          }}
-                          disabled={isExtractingClasses}
-                          className="px-3.5 py-1.5 rounded-lg bg-emerald-700 hover:bg-emerald-800 text-white text-xs font-semibold flex items-center gap-1.5 transition disabled:opacity-50 cursor-pointer shadow-xs"
-                        >
-                          {isExtractingClasses ? (
-                            <>
-                              <RefreshCw className="w-3.5 h-3.5 animate-spin" />
-                              <span>در حال استخراج هوشمند کلاس‌ها...</span>
-                            </>
-                          ) : (
-                            <>
-                              <Sparkles className="w-3.5 h-3.5" />
-                              <span>استخراج هوشمند کلاس‌ها با AI</span>
-                            </>
-                          )}
-                        </button>
-
-                        <button
-                          type="button"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            setUploadedClassFile(null);
-                          }}
-                          className="p-1.5 text-stone-400 hover:text-rose-600 transition"
-                        >
-                          <X className="w-4 h-4" />
-                        </button>
-                      </div>
-                    </div>
-                  ) : (
-                    <div>
-                      <div className="w-10 h-10 rounded-full bg-emerald-100 text-emerald-800 flex items-center justify-center mx-auto mb-2">
-                        <Upload className="w-5 h-5" />
-                      </div>
-                      <p className="text-xs font-bold text-stone-800 mb-1">
-                        فایل PDF یا تصویر برنامه کلاس‌های هفتگی را اینجا بکشید یا کلیک کنید
-                      </p>
-                      <p className="text-[11px] text-stone-500">
-                        هوش مصنوعی ساعت شروع و پایان، نام درس‌ها، روزهای برگزاری و استاد هر کلاس را خودکار استخراج می‌کند.
-                      </p>
-                    </div>
-                  )}
-                </div>
-
-                {/* Paste Option */}
-                <div className="pt-2 border-t border-stone-100">
-                  <label className="block text-[11px] font-semibold text-stone-700 mb-1">
-                    یا متن پیامک / تلگرام / پرتال برنامه هفتگی را اینجا کپی و جای‌گذاری کنید:
-                  </label>
-                  <div className="flex gap-2">
-                    <textarea
-                      rows={2}
-                      value={pastedClassText}
-                      onChange={(e) => setPastedClassText(e.target.value)}
-                      placeholder="مثال: شنبه‌ها ۱۷ تا ۲۰ حسابان ۲ ماز، دوشنبه‌ها ۱۶ تا ۱۹ فیزیک کنکور تاملند، چهارشنبه‌ها ۱۷ تا ۱۹ شیمی آموزشگاه"
-                      className="flex-1 text-xs px-3 py-2 rounded-lg border border-stone-200 bg-stone-50 focus:bg-white focus:outline-none focus:ring-1 focus:ring-emerald-500"
-                    />
-                    {pastedClassText.trim() && (
-                      <button
-                        type="button"
-                        onClick={() => handleProcessUploadedClasses(pastedClassText)}
-                        disabled={isExtractingClasses}
-                        className="px-3 py-2 rounded-lg bg-emerald-700 hover:bg-emerald-800 text-white text-xs font-semibold flex items-center gap-1 transition self-end disabled:opacity-50"
-                      >
-                        {isExtractingClasses ? (
-                          <RefreshCw className="w-3.5 h-3.5 animate-spin" />
-                        ) : (
-                          <Sparkles className="w-3.5 h-3.5" />
-                        )}
-                        <span>استخراج</span>
-                      </button>
-                    )}
-                  </div>
-                </div>
-
-                {/* Status Messages */}
-                {classesExtractSuccess && (
-                  <div className="p-3 bg-emerald-50 border border-emerald-200 text-emerald-800 rounded-lg text-xs font-medium flex items-center gap-2">
-                    <CheckCircle className="w-4 h-4 text-emerald-600 shrink-0" />
-                    <span>{classesExtractSuccess}</span>
-                  </div>
-                )}
-
-                {classesExtractError && (
-                  <div className="p-3 bg-rose-50 border border-rose-200 text-rose-800 rounded-lg text-xs font-medium flex items-center gap-2">
-                    <AlertCircle className="w-4 h-4 text-rose-600 shrink-0" />
-                    <span>{classesExtractError}</span>
-                  </div>
-                )}
-              </div>
-            )}
-
-            {/* Add Class Form */}
-            {showAddClassForm && (
-              <div className="mt-4 p-4 bg-white rounded-xl border border-stone-200 shadow-xs space-y-3 animate-fadeIn">
-                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                  <div>
-                    <label className="block text-[11px] font-semibold text-stone-700 mb-1">روز برگزاری:</label>
-                    <select
-                      value={newClassDay}
-                      onChange={e => setNewClassDay(e.target.value)}
-                      className="w-full text-xs px-2.5 py-1.5 rounded-lg border border-stone-200 bg-stone-50"
-                    >
-                      {['شنبه', 'یکشنبه', 'دوشنبه', 'سه‌شنبه', 'چهارشنبه', 'پنج‌شنبه', 'جمعه'].map(d => (
-                        <option key={d} value={d}>{d}</option>
-                      ))}
-                    </select>
-                  </div>
-
-                  <div>
-                    <label className="block text-[11px] font-semibold text-stone-700 mb-1">نام درس / مبحث:</label>
-                    <input
-                      type="text"
-                      value={newClassSubject}
-                      onChange={e => setNewClassSubject(e.target.value)}
-                      placeholder="مثال: حسابان ۲ جامع / فیزیک دوازدهم"
-                      className="w-full text-xs px-2.5 py-1.5 rounded-lg border border-stone-200 bg-stone-50"
-                    />
-                  </div>
-
-                  <div>
-                    <label className="block text-[11px] font-semibold text-stone-700 mb-1">استاد / موسسه:</label>
-                    <input
-                      type="text"
-                      value={newClassTeacher}
-                      onChange={e => setNewClassTeacher(e.target.value)}
-                      placeholder="مثال: ماز / تاملند / آموزشگاه هدف"
-                      className="w-full text-xs px-2.5 py-1.5 rounded-lg border border-stone-200 bg-stone-50"
-                    />
-                  </div>
-                </div>
-
-                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                  <div className="flex items-center gap-2">
-                    <div className="flex-1">
-                      <label className="block text-[11px] font-semibold text-stone-700 mb-1">ساعت شروع:</label>
-                      <input
-                        type="text"
-                        value={newClassStart}
-                        onChange={e => setNewClassStart(e.target.value)}
-                        placeholder="۱۷:۰۰"
-                        className="w-full text-xs px-2.5 py-1.5 rounded-lg border border-stone-200 bg-stone-50"
-                      />
-                    </div>
-                    <div className="flex-1">
-                      <label className="block text-[11px] font-semibold text-stone-700 mb-1">ساعت پایان:</label>
-                      <input
-                        type="text"
-                        value={newClassEnd}
-                        onChange={e => setNewClassEnd(e.target.value)}
-                        placeholder="۱۹:۳۰"
-                        className="w-full text-xs px-2.5 py-1.5 rounded-lg border border-stone-200 bg-stone-50"
-                      />
-                    </div>
-                  </div>
-
-                  <div>
-                    <label className="block text-[11px] font-semibold text-stone-700 mb-1">نوع برگزاری:</label>
-                    <select
-                      value={newClassType}
-                      onChange={e => setNewClassType(e.target.value as any)}
-                      className="w-full text-xs px-2.5 py-1.5 rounded-lg border border-stone-200 bg-stone-50"
-                    >
-                      <option value="online">آنلاین (وبینار / اسکای‌روم)</option>
-                      <option value="in_person">حضوری (آموزشگاه / مدرسه)</option>
-                    </select>
-                  </div>
-
-                  <div>
-                    <label className="block text-[11px] font-semibold text-stone-700 mb-1">ساعت مرور و تکلیف موردنیاز:</label>
-                    <input
-                      type="number"
-                      step="0.5"
-                      min="0.5"
-                      max="5"
-                      value={newClassPostHours}
-                      onChange={e => setNewClassPostHours(parseFloat(e.target.value) || 1.5)}
-                      className="w-full text-xs px-2.5 py-1.5 rounded-lg border border-stone-200 bg-stone-50"
-                    />
-                  </div>
-                </div>
-
-                <div className="flex justify-end pt-2">
-                  <button
-                    type="button"
-                    onClick={handleAddWeeklyClass}
-                    className="px-4 py-1.5 rounded-lg bg-emerald-700 text-white text-xs font-semibold hover:bg-emerald-800 transition"
-                  >
-                    ثبت و ذخیره کلاس
-                  </button>
-                </div>
-              </div>
-            )}
-
-            {/* Classes List */}
-            <div className="mt-3 space-y-2">
-              {(examBudget.weeklyClasses && examBudget.weeklyClasses.length > 0) ? (
-                examBudget.weeklyClasses.map(cls => (
-                  <div
-                    key={cls.id}
-                    className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 p-2.5 sm:p-3 bg-white rounded-xl border border-stone-200 text-xs"
-                  >
-                    <div className="flex items-center gap-2.5">
-                      <span className="px-2 py-0.5 rounded-md bg-rose-50 text-rose-800 font-bold border border-rose-200 text-[11px]">
-                        {cls.dayName}
-                      </span>
-                      <strong className="text-stone-900">{cls.subject}</strong>
-                      <span className="text-stone-500 text-[11px]">({cls.teacherOrInstitute})</span>
-                      <span className="text-[10px] text-stone-400">
-                        {cls.locationOrType === 'online' ? '🌐 آنلاین' : '🏫 حضوری'}
-                      </span>
-                    </div>
-
-                    <div className="flex items-center gap-3 self-end sm:self-auto">
-                      <span className="font-semibold text-stone-700">
-                        {cls.startTime} تا {cls.endTime}
-                      </span>
-                      <span className="text-[10px] bg-stone-100 text-stone-600 px-2 py-0.5 rounded-md">
-                        {cls.postClassStudyHoursNeeded || 1.5}h تکلیف و مرور
-                      </span>
-                      <button
-                        type="button"
-                        onClick={() => handleRemoveWeeklyClass(cls.id)}
-                        className="text-stone-400 hover:text-rose-600 transition"
-                        title="حذف کلاس"
-                      >
-                        <Trash2 className="w-3.5 h-3.5" />
-                      </button>
-                    </div>
-                  </div>
-                ))
-              ) : (
-                <p className="text-[11px] text-stone-400 py-2 text-center">
-                  کلاسی ثبت نشده است. در صورت داشتن کلاس‌های هفتگی، آن‌ها را اضافه کنید تا هوش مصنوعی ساعات خالی را به مطالعه آزمون اختصاص دهد.
-                </p>
-              )}
-            </div>
-          </div>
-
-          {/* 2. TOPIC DIFFICULTY & TARGET TESTS BREAKDOWN */}
-          <div className="bg-stone-50/80 rounded-2xl p-4 sm:p-5 border border-stone-200">
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-stone-200">
-              <div className="flex items-center gap-2.5">
-                <div className="w-8 h-8 rounded-lg bg-emerald-50 text-emerald-700 flex items-center justify-center font-bold">
-                  <Gauge className="w-4 h-4" />
-                </div>
-                <div>
-                  <h3 className="text-xs font-bold text-stone-900 flex items-center gap-2">
-                    <span>تشخیص خودکار سرفصل‌ها، درجه سختی و تارگت تست</span>
-                    <span className="text-[10px] bg-emerald-100 text-emerald-800 px-2 py-0.5 rounded-full font-bold">
-                      {(examBudget.topicDetails || []).length} سرفصل • {examBudget.totalTargetTests || 450} تست
-                    </span>
-                  </h3>
-                  <p className="text-[11px] text-stone-500">
-                    با آپلود بودجه‌بندی آزمون، ربات هوشمند خودش درجه سختی مباحث (چالشی، سخت، متوسط) و تعداد تست را استخراج می‌کند و نیاز به ورود دستی نیست.
-                  </p>
-                </div>
-              </div>
-
-              <div className="flex items-center gap-2">
-                <button
-                  type="button"
-                  onClick={() => setShowAddTopicDetailForm(!showAddTopicDetailForm)}
-                  className="px-3 py-1.5 rounded-xl bg-stone-900 text-white hover:bg-stone-800 text-xs font-semibold flex items-center gap-1.5 transition cursor-pointer self-start sm:self-auto"
-                >
-                  <Plus className="w-3.5 h-3.5" />
-                  <span>{showAddTopicDetailForm ? 'بستن فرم' : 'افزودن دستی (اختیاری)'}</span>
-                </button>
-              </div>
-            </div>
-
-            {/* Add Topic Detail Form */}
-            {showAddTopicDetailForm && (
-              <div className="mt-4 p-4 bg-white rounded-xl border border-stone-200 shadow-xs space-y-3 animate-fadeIn">
-                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                  <div>
-                    <label className="block text-[11px] font-semibold text-stone-700 mb-1">نام درس:</label>
-                    <input
-                      type="text"
-                      value={newTdSubject}
-                      onChange={e => setNewTdSubject(e.target.value)}
-                      placeholder="مثال: حسابان ۲ / فیزیک ۳"
-                      className="w-full text-xs px-2.5 py-1.5 rounded-lg border border-stone-200 bg-stone-50"
-                    />
-                  </div>
-
-                  <div>
-                    <label className="block text-[11px] font-semibold text-stone-700 mb-1">فصل کتاب:</label>
-                    <input
-                      type="text"
-                      value={newTdChapter}
-                      onChange={e => setNewTdChapter(e.target.value)}
-                      placeholder="مثال: کاربرد مشتق / سقوط آزاد"
-                      className="w-full text-xs px-2.5 py-1.5 rounded-lg border border-stone-200 bg-stone-50"
-                    />
-                  </div>
-
-                  <div>
-                    <label className="block text-[11px] font-semibold text-stone-700 mb-1">زیرمبحث دقیق:</label>
-                    <input
-                      type="text"
-                      value={newTdSubtopic}
-                      onChange={e => setNewTdSubtopic(e.target.value)}
-                      placeholder="مثال: اکسترمم‌های نسبی و بهینه‌سازی"
-                      className="w-full text-xs px-2.5 py-1.5 rounded-lg border border-stone-200 bg-stone-50"
-                    />
-                  </div>
-                </div>
-
-                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                  <div>
-                    <label className="block text-[11px] font-semibold text-stone-700 mb-1">درجه سختی:</label>
-                    <select
-                      value={newTdDifficulty}
-                      onChange={e => setNewTdDifficulty(e.target.value as any)}
-                      className="w-full text-xs px-2.5 py-1.5 rounded-lg border border-stone-200 bg-stone-50"
-                    >
-                      <option value="بسیار چالشی و دام‌دار">بسیار چالشی و دام‌دار</option>
-                      <option value="سخت">سخت</option>
-                      <option value="متوسط">متوسط</option>
-                      <option value="آسان و روان">آسان و روان</option>
-                    </select>
-                  </div>
-
-                  <div>
-                    <label className="block text-[11px] font-semibold text-stone-700 mb-1">تعداد تست هدف هفته:</label>
-                    <input
-                      type="number"
-                      min="10"
-                      max="300"
-                      step="5"
-                      value={newTdTargetTests}
-                      onChange={e => setNewTdTargetTests(parseInt(e.target.value) || 100)}
-                      className="w-full text-xs px-2.5 py-1.5 rounded-lg border border-stone-200 bg-stone-50"
-                    />
-                  </div>
-
-                  <div>
-                    <label className="block text-[11px] font-semibold text-stone-700 mb-1">اهمیت و ضریب آزمونی:</label>
-                    <select
-                      value={newTdImportance}
-                      onChange={e => setNewTdImportance(e.target.value as any)}
-                      className="w-full text-xs px-2.5 py-1.5 rounded-lg border border-stone-200 bg-stone-50"
-                    >
-                      <option value="پرتکرار و حیاتی (تضمین درصد)">پرتکرار و حیاتی (تضمین درصد)</option>
-                      <option value="متوسط">متوسط</option>
-                      <option value="کم‌تکرار اما رتبه‌ساز">کم‌تکرار اما رتبه‌ساز</option>
-                    </select>
-                  </div>
-                </div>
-
-                <div className="flex justify-end pt-2">
-                  <button
-                    type="button"
-                    onClick={handleAddTopicDetail}
-                    className="px-4 py-1.5 rounded-lg bg-emerald-700 text-white text-xs font-semibold hover:bg-emerald-800 transition"
-                  >
-                    ثبت سرفصل و سختی
-                  </button>
-                </div>
-              </div>
-            )}
-
-            {/* Topic Details List */}
-            <div className="mt-3 space-y-2">
-              {(examBudget.topicDetails && examBudget.topicDetails.length > 0) ? (
-                examBudget.topicDetails.map(td => {
-                  const diffColor = 
-                    td.difficulty === 'بسیار چالشی و دام‌دار' 
-                      ? 'bg-rose-50 text-rose-700 border-rose-200' 
-                      : td.difficulty === 'سخت'
-                      ? 'bg-amber-50 text-amber-700 border-amber-200'
-                      : 'bg-emerald-50 text-emerald-700 border-emerald-200';
-
-                  return (
-                    <div
-                      key={td.id}
-                      className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 p-2.5 sm:p-3 bg-white rounded-xl border border-stone-200 text-xs"
-                    >
-                      <div>
-                        <div className="flex items-center gap-2">
-                          <strong className="text-stone-900">{td.subject} - {td.chapter}</strong>
-                          <span className={`text-[10px] px-2 py-0.5 rounded-md border font-bold ${diffColor}`}>
-                            {td.difficulty}
-                          </span>
-                        </div>
-                        <div className="text-[11px] text-stone-500 mt-0.5">
-                          {td.subtopic} • {td.importanceWeight}
-                        </div>
-                      </div>
-
-                      <div className="flex items-center gap-3 self-end sm:self-auto">
-                        <span className="font-bold text-emerald-700 bg-emerald-50 px-2.5 py-1 rounded-lg border border-emerald-200">
-                          🎯 {td.targetTestCount} تست هدف
-                        </span>
-                        <button
-                          type="button"
-                          onClick={() => handleRemoveTopicDetail(td.id)}
-                          className="text-stone-400 hover:text-rose-600 transition"
-                          title="حذف مبحث"
-                        >
-                          <Trash2 className="w-3.5 h-3.5" />
-                        </button>
-                      </div>
-                    </div>
-                  );
-                })
-              ) : (
-                <p className="text-[11px] text-stone-400 py-2 text-center">
-                  سرفصل با درجه سختی ثبت نشده است. می‌توانید دکمه بالا را بزنید یا از بارگذاری نمونه‌های قلم‌چی/ماز استفاده کنید.
-                </p>
-              )}
-            </div>
-          </div>
-        </div>
-
-        {/* Quick Action Button for Schedule Generation */}
-        <div className="mt-6 pt-5 border-t border-stone-100 flex flex-col sm:flex-row items-center justify-between gap-4">
-          <div className="text-xs text-stone-500">
-            {examBudget.selectedTopics.length === 0 ? (
-              <span>نکته: برای گرفتن بهترین نتیجه، حداقل ۱ یا ۲ مبحث را از جدول پایین یا با آپلود عکس اضافه کنید.</span>
-            ) : (
-              <span>
-                مجموع تست استاندارد برآورد شده برای این آزمون: <strong className="text-emerald-700 font-bold">{grandTotalTests} تست</strong> ({dailyTestTarget} تست در روز)
-              </span>
-            )}
-          </div>
-
-          <button
-            onClick={handleGenerateExamSchedule}
-            disabled={isGenerating}
-            className="w-full sm:w-auto inline-flex items-center justify-center gap-2 px-6 py-2.5 rounded-xl bg-emerald-700 hover:bg-emerald-800 text-white font-semibold text-xs sm:text-sm shadow-sm transition-all disabled:opacity-50 cursor-pointer"
-          >
-            {isGenerating ? (
-              <>
-                <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-                <span>در حال مهندسی برنامه هفتگی آزمون...</span>
-              </>
-            ) : (
-              <>
-                <Sparkles className="w-4 h-4" />
-                <span>طراحی برنامه هفتگی متناسب با این بودجه‌بندی</span>
-              </>
-            )}
-          </button>
-        </div>
-
-        {successMessage && (
-          <div className="mt-4 p-3 bg-emerald-50 border border-emerald-200 text-emerald-800 rounded-xl text-xs font-medium flex items-center gap-2">
-            <CheckCircle className="w-4 h-4 text-emerald-600 shrink-0" />
-            <span>{successMessage}</span>
-          </div>
-        )}
-
-        {generateError && (
-          <div className="mt-4 p-3 bg-rose-50 border border-rose-200 text-rose-800 rounded-xl text-xs font-medium flex items-center gap-2">
-            <AlertCircle className="w-4 h-4 text-rose-600 shrink-0" />
-            <span>{generateError}</span>
-          </div>
-        )}
-      </div>
+      {/* SUB-VIEW 1: WEEKLY CLASSES & SCHOOL SCHEDULE */}
+      {activeSubTab === 'classes' && (
+        <WeeklyClassesSection
+          profile={profile}
+          examBudget={examBudget}
+          onUpdateExamBudget={onUpdateExamBudget}
+          onSwitchToScheduleTab={onSwitchToScheduleTab}
+        />
+      )}
 
       {/* SUB-VIEW 1: CURRICULUM ATLAS & TOPIC CARDS */}
       {activeSubTab === 'atlas' && (
@@ -2043,7 +1231,9 @@ export function MathExamPlannerView({
             <div>
               <h2 className="text-lg font-bold text-stone-900 flex items-center gap-2">
                 <Layers className="w-5 h-5 text-emerald-700" />
-                <span>اطلس سرفصل‌های کنکور ریاضی، تعداد تست‌های لازم و منابع</span>
+                <span>
+                  اطلس سرفصل‌های کنکور {currentStream === 'experimental' ? 'تجربی' : currentStream === 'humanities' ? 'علوم انسانی' : 'ریاضی'}، تعداد تست‌های لازم و منابع
+                </span>
               </h2>
               <p className="text-xs text-stone-500">
                 تعداد تست‌های لازم برای تسلط (آموزشی، زمان‌دار و مروری) و کتاب‌های برتر هر فصل را بررسی کن و به برنامه اضافه کن.
@@ -2075,21 +1265,137 @@ export function MathExamPlannerView({
             </div>
           </div>
 
-          {/* Subject Filter Pills */}
-          <div className="flex items-center gap-2 overflow-x-auto pb-2 text-xs scrollbar-none">
-            {availableSubjectFilters.map((item) => (
+          {/* Stream Switcher Bar inside Atlas */}
+          <div className="flex flex-wrap items-center justify-between gap-3 bg-stone-900 text-stone-100 p-3 rounded-2xl shadow-xs">
+            <div className="flex items-center gap-2">
+              <span className="text-xs font-bold text-emerald-400">رشته تحصیلی اطلس:</span>
+              <div className="flex items-center gap-1.5">
+                {STREAM_OPTIONS.map((st) => (
+                  <button
+                    key={st.id}
+                    onClick={() => {
+                      setCurrentStream(st.id);
+                      setSelectedSubjectFilter('all');
+                      setSelectedGradeFilter('all');
+                      setSelectedDifficultyFilter('all');
+                    }}
+                    className={`px-3 py-1 rounded-xl text-xs font-bold transition cursor-pointer ${
+                      currentStream === st.id
+                        ? 'bg-emerald-500 text-stone-950 shadow-sm'
+                        : 'bg-stone-800 text-stone-300 hover:bg-stone-700'
+                    }`}
+                  >
+                    {st.name}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* Quick Action: Select All / Clear All Filtered */}
+            <div className="flex items-center gap-2 text-xs">
+              <span className="text-stone-400 text-[11px]">
+                {filteredTopics.length} سرفصل یافت شد ({examBudget.selectedTopics.length} مورد در بودجه‌بندی آزمون)
+              </span>
               <button
-                key={item.id}
-                onClick={() => setSelectedSubjectFilter(item.id)}
-                className={`px-3 py-1.5 rounded-lg whitespace-nowrap font-medium transition-all cursor-pointer ${
-                  selectedSubjectFilter === item.id
-                    ? 'bg-stone-900 text-white shadow-xs'
-                    : 'bg-white text-stone-600 border border-stone-200 hover:bg-stone-100'
-                }`}
+                onClick={() => {
+                  const toAdd = filteredTopics.map(t => t.chapter).filter(c => !examBudget.selectedTopics.includes(c));
+                  if (toAdd.length > 0) {
+                    onUpdateExamBudget({
+                      ...examBudget,
+                      selectedTopics: [...examBudget.selectedTopics, ...toAdd]
+                    });
+                  }
+                }}
+                className="px-2.5 py-1 rounded-lg bg-emerald-600/30 hover:bg-emerald-600/40 text-emerald-300 border border-emerald-500/30 text-[11px] font-semibold transition cursor-pointer"
+                title="افزودن همه مباحث فیلتر شده فعلی به بودجه‌بندی آزمون"
               >
-                {item.label}
+                + افزودن همه مباحث این بخش
               </button>
-            ))}
+              {examBudget.selectedTopics.length > 0 && (
+                <button
+                  onClick={() => {
+                    const filteredChapters = new Set(filteredTopics.map(t => t.chapter));
+                    onUpdateExamBudget({
+                      ...examBudget,
+                      selectedTopics: examBudget.selectedTopics.filter(c => !filteredChapters.has(c))
+                    });
+                  }}
+                  className="px-2.5 py-1 rounded-lg bg-stone-800 hover:bg-stone-700 text-stone-400 hover:text-rose-300 text-[11px] transition cursor-pointer"
+                  title="حذف موارد فیلتر شده از بودجه‌بندی آزمون"
+                >
+                  حذف از بودجه‌بندی
+                </button>
+              )}
+            </div>
+          </div>
+
+          {/* Filter Bar: Subject, Grade, and Difficulty */}
+          <div className="space-y-2 bg-stone-50 p-3 rounded-2xl border border-stone-200">
+            {/* Subject Filter Pills */}
+            <div className="flex items-center gap-1.5 overflow-x-auto pb-1 text-xs scrollbar-none">
+              <span className="text-[11px] font-bold text-stone-500 shrink-0 ml-1">درس:</span>
+              {availableSubjectFilters.map((item) => (
+                <button
+                  key={item.id}
+                  onClick={() => setSelectedSubjectFilter(item.id)}
+                  className={`px-3 py-1 rounded-lg whitespace-nowrap font-medium transition-all cursor-pointer ${
+                    selectedSubjectFilter === item.id
+                      ? 'bg-stone-900 text-white shadow-xs'
+                      : 'bg-white text-stone-600 border border-stone-200 hover:bg-stone-100'
+                  }`}
+                >
+                  {item.label}
+                </button>
+              ))}
+            </div>
+
+            {/* Grade & Difficulty Pills */}
+            <div className="flex flex-wrap items-center justify-between gap-2 pt-1 border-t border-stone-200/60">
+              <div className="flex items-center gap-1.5 overflow-x-auto text-xs">
+                <span className="text-[11px] font-bold text-stone-500 shrink-0 ml-1">پایه:</span>
+                {[
+                  { id: 'all', label: 'همه پایه‌ها' },
+                  { id: 'دهم', label: 'پایه دهم' },
+                  { id: 'یازدهم', label: 'پایه یازدهم' },
+                  { id: 'دوازدهم', label: 'پایه دوازدهم' }
+                ].map((g) => (
+                  <button
+                    key={g.id}
+                    onClick={() => setSelectedGradeFilter(g.id)}
+                    className={`px-2.5 py-0.5 rounded-md text-[11px] font-medium transition cursor-pointer ${
+                      selectedGradeFilter === g.id
+                        ? 'bg-emerald-700 text-white shadow-2xs font-bold'
+                        : 'bg-white text-stone-600 border border-stone-200 hover:bg-stone-100'
+                    }`}
+                  >
+                    {g.label}
+                  </button>
+                ))}
+              </div>
+
+              <div className="flex items-center gap-1.5 overflow-x-auto text-xs">
+                <span className="text-[11px] font-bold text-stone-500 shrink-0 ml-1">سختی:</span>
+                {[
+                  { id: 'all', label: 'همه سطوح' },
+                  { id: 'آسان', label: 'روان و آسان' },
+                  { id: 'متوسط', label: 'متوسط' },
+                  { id: 'سخت', label: 'سخت' },
+                  { id: 'چالش', label: 'بسیار چالشی' }
+                ].map((d) => (
+                  <button
+                    key={d.id}
+                    onClick={() => setSelectedDifficultyFilter(d.id)}
+                    className={`px-2.5 py-0.5 rounded-md text-[11px] font-medium transition cursor-pointer ${
+                      selectedDifficultyFilter === d.id
+                        ? 'bg-amber-700 text-white shadow-2xs font-bold'
+                        : 'bg-white text-stone-600 border border-stone-200 hover:bg-stone-100'
+                    }`}
+                  >
+                    {d.label}
+                  </button>
+                ))}
+              </div>
+            </div>
           </div>
 
           {/* Topics Grid */}
@@ -2175,15 +1481,58 @@ export function MathExamPlannerView({
                     {/* Subtopics Checklist */}
                     {topic.subtopics && topic.subtopics.length > 0 && (
                       <div className="space-y-1.5 mb-3 bg-stone-50 rounded-xl p-3 border border-stone-100">
-                        <span className="text-[11px] font-bold text-stone-700 block mb-1">
-                          زیربخش‌های کلیدی فصل:
-                        </span>
-                        {topic.subtopics.map((sub, i) => (
-                          <div key={i} className="flex items-start gap-1.5 text-xs text-stone-600 leading-relaxed">
-                            <div className="w-1.5 h-1.5 rounded-full bg-stone-400 mt-1.5 shrink-0" />
-                            <span>{sub}</span>
+                        <div className="flex items-center justify-between mb-1">
+                          <span className="text-[11px] font-bold text-stone-700">
+                            زیربخش‌های کلیدی فصل:
+                          </span>
+                          <div className="flex items-center gap-2">
+                            <span className="text-[10px] text-stone-500 font-medium">
+                              {topic.subtopics.filter(sub => completedSubtopics[`${topic.id}-${sub}`]).length} از {topic.subtopics.length} خوانده شده
+                            </span>
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                const allDone = topic.subtopics.every(sub => completedSubtopics[`${topic.id}-${sub}`]);
+                                setCompletedSubtopics(prev => {
+                                  const updated = { ...prev };
+                                  topic.subtopics.forEach(sub => {
+                                    updated[`${topic.id}-${sub}`] = !allDone;
+                                  });
+                                  try {
+                                    localStorage.setItem('advisor_completed_subtopics', JSON.stringify(updated));
+                                  } catch {}
+                                  return updated;
+                                });
+                              }}
+                              className="text-[10px] text-emerald-700 hover:text-emerald-900 font-bold underline cursor-pointer"
+                            >
+                              {topic.subtopics.every(sub => completedSubtopics[`${topic.id}-${sub}`]) ? 'لغو همه' : 'تیک همه'}
+                            </button>
                           </div>
-                        ))}
+                        </div>
+                        {topic.subtopics.map((sub, i) => {
+                          const subKey = `${topic.id}-${sub}`;
+                          const isDone = !!completedSubtopics[subKey];
+                          return (
+                            <div 
+                              key={i} 
+                              onClick={() => toggleSubtopicCompleted(subKey)}
+                              className={`flex items-start gap-2 text-xs leading-relaxed p-1.5 rounded-lg cursor-pointer transition select-none ${
+                                isDone 
+                                  ? 'bg-emerald-50/80 text-emerald-900 line-through decoration-emerald-500/60' 
+                                  : 'text-stone-700 hover:bg-stone-100/70'
+                              }`}
+                            >
+                              <div className={`w-3.5 h-3.5 rounded mt-0.5 shrink-0 flex items-center justify-center border transition ${
+                                isDone ? 'bg-emerald-600 border-emerald-600 text-white' : 'border-stone-300 bg-white'
+                              }`}>
+                                {isDone && <CheckCircle className="w-3 h-3 text-white" />}
+                              </div>
+                              <span className={isDone ? 'opacity-80' : ''}>{sub}</span>
+                            </div>
+                          );
+                        })}
                       </div>
                     )}
 

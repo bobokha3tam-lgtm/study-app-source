@@ -16,6 +16,7 @@ import { CounselorDedicatedPortal } from './components/CounselorDedicatedPortal'
 import { CounselorLoginModal } from './components/CounselorLoginModal';
 import { AccountLockoutOverlay } from './components/AccountLockoutOverlay';
 import { StudentLoginOverlay } from './components/StudentLoginOverlay';
+import { FocusModeOverlay } from './components/FocusModeOverlay';
 import { Megaphone, ShieldCheck, X } from 'lucide-react';
 import { safeSetItem, capArray } from './utils/safeStorage';
 import { 
@@ -45,6 +46,7 @@ import {
   SAMPLE_TRAP_QUESTIONS,
   INITIAL_FINAL_EXAM_ITEMS
 } from './data/defaults';
+import { sanitizeAndAdvanceExamBudget } from './utils/examCountdown';
 
 const DEFAULT_SECONDARY_STUDENT: StudentProfile = {
   id: 'st_sara',
@@ -296,13 +298,18 @@ export default function App() {
     return localStorage.getItem('study_advisor_counselor_directive') || '';
   });
 
-  const [schedule, setSchedule] = useState<WeeklySchedule>(() =>
-    loadStudentSlice('study_advisor_schedule', activeStKey, SAMPLE_INITIAL_SCHEDULE)
-  );
+  const [schedule, setSchedule] = useState<WeeklySchedule>(() => {
+    const loaded = loadStudentSlice('study_advisor_schedule', activeStKey, SAMPLE_INITIAL_SCHEDULE);
+    if (loaded && loaded.weekTitle && loaded.weekTitle.includes('سقوط آزاد و نظریه اعداد')) {
+      return SAMPLE_INITIAL_SCHEDULE; // overwrite the garbage one with the fresh defaults
+    }
+    return loaded;
+  });
 
-  const [examBudget, setExamBudget] = useState<ExamBudget>(() =>
-    loadStudentSlice('study_advisor_exam_budget', activeStKey, DEFAULT_EXAM_BUDGET)
-  );
+  const [examBudget, setExamBudget] = useState<ExamBudget>(() => {
+    const loaded = loadStudentSlice('study_advisor_exam_budget', activeStKey, DEFAULT_EXAM_BUDGET);
+    return sanitizeAndAdvanceExamBudget(loaded, profile.fieldOfStudy);
+  });
 
   const [reports, setReports] = useState<NightlyReport[]>(() =>
     loadStudentSlice('study_advisor_reports', activeStKey, INITIAL_SAMPLE_LOGS)
@@ -336,7 +343,8 @@ export default function App() {
 
   const [proToolsSubTab, setProToolsSubTab] = useState<ProToolTab>('postmortem');
 
-  const [activeTab, setActiveTab] = useState<'nightly' | 'schedule' | 'exam' | 'pro_tools' | 'psychology' | 'chat' | 'hermes'>('nightly');
+  const [activeTab, setActiveTab] = useState<'nightly' | 'schedule' | 'exam' | 'pro_tools' | 'psychology' | 'chat' | 'hermes'>('schedule');
+  const [isFocusModeOpen, setIsFocusModeOpen] = useState<boolean>(false);
   const [isProfileModalOpen, setIsProfileModalOpen] = useState<boolean>(false);
   const [isShareModalOpen, setIsShareModalOpen] = useState<boolean>(false);
   const [isResetModalOpen, setIsResetModalOpen] = useState<boolean>(false);
@@ -476,7 +484,7 @@ export default function App() {
             ) {
               const stKey = matchedServerStudent.id || matchedServerStudent.name;
               setSchedule(loadStudentSlice('study_advisor_schedule', stKey, SAMPLE_INITIAL_SCHEDULE));
-              setExamBudget(loadStudentSlice('study_advisor_exam_budget', stKey, DEFAULT_EXAM_BUDGET));
+              setExamBudget(sanitizeAndAdvanceExamBudget(loadStudentSlice('study_advisor_exam_budget', stKey, DEFAULT_EXAM_BUDGET), matchedServerStudent.fieldOfStudy));
               setReports(loadStudentSlice('study_advisor_reports', stKey, INITIAL_SAMPLE_LOGS));
               setSpacedCards(loadStudentSlice('study_advisor_spaced_cards', stKey, SAMPLE_SPACED_CARDS));
               setFeynmanSessions(loadStudentSlice('study_advisor_feynman', stKey, SAMPLE_FEYNMAN_SESSIONS));
@@ -697,7 +705,7 @@ export default function App() {
     const key = target.id || target.name;
 
     setSchedule(loadStudentSlice('study_advisor_schedule', key, SAMPLE_INITIAL_SCHEDULE));
-    setExamBudget(loadStudentSlice('study_advisor_exam_budget', key, DEFAULT_EXAM_BUDGET));
+    setExamBudget(sanitizeAndAdvanceExamBudget(loadStudentSlice('study_advisor_exam_budget', key, DEFAULT_EXAM_BUDGET), target.fieldOfStudy));
     setReports(loadStudentSlice('study_advisor_reports', key, INITIAL_SAMPLE_LOGS));
     setSpacedCards(loadStudentSlice('study_advisor_spaced_cards', key, SAMPLE_SPACED_CARDS));
     setFeynmanSessions(loadStudentSlice('study_advisor_feynman', key, SAMPLE_FEYNMAN_SESSIONS));
@@ -1105,6 +1113,7 @@ export default function App() {
         onOpenSearch={() => setIsSearchModalOpen(true)}
         onOpenMasterAdmin={handleOpenCounselorGateway}
         isAdminUnlocked={isAdminUnlocked}
+        onToggleFocusMode={() => setIsFocusModeOpen(true)}
       />
 
       {/* Personal Student Profile Dedicated Banner */}
@@ -1149,25 +1158,26 @@ export default function App() {
 
       {/* Main Content Area */}
       <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-8">
-        {activeTab === 'nightly' && (
+        <div className={activeTab === 'nightly' ? 'block' : 'hidden'}>
           <NightlyCheckinView
             profile={profile}
             reports={reports}
             onAddReport={handleAddReport}
           />
-        )}
+        </div>
 
-        {activeTab === 'schedule' && (
+        <div className={activeTab === 'schedule' ? 'block' : 'hidden'}>
           <WeeklyScheduleView
             schedule={schedule}
             profile={profile}
             onUpdateSchedule={handleUpdateSchedule}
             examBudget={examBudget}
+            onUpdateExamBudget={setExamBudget}
             onSwitchToExamTab={() => setActiveTab('exam')}
           />
-        )}
+        </div>
 
-        {activeTab === 'exam' && (
+        <div className={activeTab === 'exam' ? 'block' : 'hidden'}>
           <MathExamPlannerView
             profile={profile}
             examBudget={examBudget}
@@ -1179,9 +1189,9 @@ export default function App() {
               setActiveTab('pro_tools');
             }}
           />
-        )}
+        </div>
 
-        {activeTab === 'pro_tools' && (
+        <div className={activeTab === 'pro_tools' ? 'block' : 'hidden'}>
           <KonkurProToolsHub
             profile={profile}
             examBudget={examBudget}
@@ -1209,9 +1219,9 @@ export default function App() {
             onInjectDescriptiveBlock={handleInjectDescriptiveBlock}
             defaultSubTab={proToolsSubTab}
           />
-        )}
+        </div>
 
-        {activeTab === 'psychology' && (
+        <div className={activeTab === 'psychology' ? 'block' : 'hidden'}>
           <CognitivePsychologyView
             profile={profile}
             schedule={schedule}
@@ -1222,17 +1232,17 @@ export default function App() {
             onAddFeynmanSession={handleAddFeynmanSession}
             onRestoreBackup={handleRestoreBackup}
           />
-        )}
+        </div>
 
-        {activeTab === 'chat' && (
+        <div className={activeTab === 'chat' ? 'block' : 'hidden'}>
           <div className="max-w-4xl mx-auto">
             <QuickChatView profile={profile} />
           </div>
-        )}
+        </div>
 
-        {activeTab === 'hermes' && (
+        <div className={activeTab === 'hermes' ? 'block' : 'hidden'}>
           <HermesTelegramGuide profile={profile} />
-        )}
+        </div>
       </main>
 
       {/* Student Profile Settings Modal */}
@@ -1293,6 +1303,12 @@ export default function App() {
           handleCounselorLoginSuccess();
         }}
         onOpenMasterAdmin={handleOpenCounselorGateway}
+      />
+
+      {/* Dedicated Focus / Zen Mode Modal */}
+      <FocusModeOverlay
+        isOpen={isFocusModeOpen}
+        onClose={() => setIsFocusModeOpen(false)}
       />
 
       {/* Dedicated Counselor Login Modal */}

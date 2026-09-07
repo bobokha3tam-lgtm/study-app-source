@@ -95,6 +95,8 @@ export interface TopicExamDetail {
   completedTestCount?: number;
   importanceWeight: 'کم' | 'متوسط' | 'پرتکرار و حیاتی (تضمین درصد)';
   hasPrerequisiteInClass?: boolean; // آیا منوط به تدریس کلاس هفتگی است؟
+  pagesOrScope?: string; // صفحات دقیق کتاب درسی یا جزوه
+  testTypes?: string; // تیپ تست‌ها مثل تالیفی ماز، کنکور سراسری، مسائل دام‌دار
 }
 
 export interface StudyBlock {
@@ -235,7 +237,7 @@ export interface TestVolumeGuideline {
   timedPracticeTests: number; // تست تسلط و زمان‌دار (برای سرعت عمل و دقت)
   reviewTests: number; // تست پوششی و مروری (برای بازیابی در ایستگاه‌های مرور)
   totalRecommendedTests: number; // مجموع تست هدف برای درصد بالای ۷۰٪
-  estimatedStudyHours: number; // ساعت مطالعه و تحلیل تخمینی
+  estimatedStudyHours?: number; // ساعت مطالعه و تحلیل تخمینی
 }
 
 export interface MathTopicInfo {
@@ -260,10 +262,27 @@ export interface MathTopicInfo {
   masteryTips?: string[];
 }
 
+export interface ScheduledExam {
+  id: string;
+  examName: string;
+  organization: 'قلم‌چی' | 'ماز' | 'سنجش' | 'گزینه دو' | 'مدرسه' | 'سایر';
+  stageTitle: string; // عنوان مرحله آزمون مثلاً "مرحله ۱ - شروع سال تحصیلی"
+  examDate: string; // تاریخ آزمون به فارسی مثل "جمعه ۲۱ شهریور ۱۴۰۵"
+  dateGregorian?: string; // تاریخ میلادی/ایزو برای محاسبه دقیق روزهای باقیمانده مثل "2026-09-11"
+  daysRemaining?: number; // تعداد روز باقیمانده زنده
+  syllabusSummary: string; // متن خلاصه بودجه‌بندی
+  targetGoalText?: string; // هدف تراز یا درصد
+  selectedTopics: string[]; // سرفصل‌های دروس هدف
+  topicDetails?: TopicExamDetail[]; // تفکیک فصول با درجه سختی و تست هدف
+  totalTargetTests?: number;
+  isCompleted?: boolean;
+}
+
 export interface ExamBudget {
   examName: string;
   examDate: string;
-  daysUntilExam?: number; // تعداد روز باقی‌مانده تا آزمون؛ توسط کاربر وارد می‌شود
+  dateGregorian?: string; // تاریخ میلادی YYYY-MM-DD آزمون برای محاسبه خودکار و دقیق روزها
+  daysUntilExam?: number; // تعداد روز باقی‌مانده تا آزمون
   daysUntilExamSetAt?: string; // زمان ثبت/آخرین ویرایش daysUntilExam (ISO) — مبنای محاسبه شمارش معکوس واقعی
   targetGoalText: string;
   syllabusDetails: string;
@@ -274,6 +293,8 @@ export interface ExamBudget {
   uploadedFileName?: string;
   uploadedFilePreview?: string;
   extractedAt?: string;
+  activeExamId?: string; // شناسه آزمون فعال انتخاب‌شده از تقویم
+  scheduledExams?: ScheduledExam[]; // لیست کلیه آزمون‌های برنامه‌ریزی‌شده
 }
 
 export type ExamErrorCategory = 

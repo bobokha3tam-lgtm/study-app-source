@@ -29,6 +29,7 @@ import {
   Flame,
   Award,
   AlertCircle,
+  AlertTriangle,
   School,
   GraduationCap,
   CalendarCheck2,
@@ -36,6 +37,7 @@ import {
   ChevronDown,
   ChevronUp,
   ArrowRight,
+  ArrowLeft,
   ShieldCheck,
   Hourglass,
   Archive,
@@ -47,13 +49,20 @@ import {
 import { StudentProfile, WeeklySchedule, DaySchedule, StudyBlock, ExamBudget } from '../types';
 import { getSuggestedSubjectsForStream } from '../data/curriculumData';
 import { LiveFocusRoom } from './LiveFocusRoom';
-import { getLiveDaysUntilExam } from '../utils/examCountdown';
+import { 
+  getLiveDaysUntilExam, 
+  calculateExamCountdown, 
+  getPersianTodayInfo, 
+  toPersianDigits,
+  sanitizeAndAdvanceExamBudget 
+} from '../utils/examCountdown';
 
 interface WeeklyScheduleViewProps {
   schedule: WeeklySchedule;
   profile: StudentProfile;
   onUpdateSchedule: (newSchedule: WeeklySchedule) => void;
   examBudget?: ExamBudget;
+  onUpdateExamBudget?: (newBudget: ExamBudget) => void;
   onSwitchToExamTab?: () => void;
 }
 
@@ -64,6 +73,7 @@ export const WeeklyScheduleView: React.FC<WeeklyScheduleViewProps> = ({
   profile,
   onUpdateSchedule,
   examBudget: propExamBudget,
+  onUpdateExamBudget,
   onSwitchToExamTab,
 }) => {
   const [activeDayIndex, setActiveDayIndex] = useState<number>(0);
@@ -121,7 +131,8 @@ export const WeeklyScheduleView: React.FC<WeeklyScheduleViewProps> = ({
   const [formMethod, setFormMethod] = useState<string>('پومودورو (۲۵-۵)');
   const [formTargetDayIdx, setFormTargetDayIdx] = useState<number>(activeDayIndex);
 
-  const [showExamTopicsList, setShowExamTopicsList] = useState<boolean>(true);
+  const [showExamTopicsList, setShowExamTopicsList] = useState<boolean>(false);
+  const [showExamCountdownCard, setShowExamCountdownCard] = useState<boolean>(true);
   const [showClearModal, setShowClearModal] = useState<boolean>(false);
 
   // Two-week cadence state
@@ -159,41 +170,25 @@ export const WeeklyScheduleView: React.FC<WeeklyScheduleViewProps> = ({
 
   // Calculate Countdown and Timeline to Exam
   const examTimelineInfo = React.useMemo(() => {
-    if (!activeExamBudget || !activeExamBudget.examDate) {
+    if (!activeExamBudget || (!activeExamBudget.examDate && !activeExamBudget.examName)) {
       return null;
     }
-    const examDateStr = activeExamBudget.examDate.trim();
-
-    // 1) Prefer the day count the student actually entered — it ticks down
-    //    correctly over time (see src/utils/examCountdown.ts).
-    let daysLeft: number | null = getLiveDaysUntilExam(activeExamBudget);
-
-    // 2) Fall back to a real date parse only if it's an actual parseable
-    //    date (e.g. an ISO string) — examDate is normally free Persian text
-    //    like "جمعه ۱۸ آبان" which Date.parse can never understand, so this
-    //    rarely applies.
-    if (daysLeft === null) {
-      const parsedTimestamp = Date.parse(examDateStr);
-      if (!isNaN(parsedTimestamp)) {
-        const diffMs = parsedTimestamp - Date.now();
-        daysLeft = Math.max(0, Math.ceil(diffMs / (1000 * 60 * 60 * 24)));
-      }
-    }
-    // Previously, any remaining case fell back to a hardcoded guess (5 or 6
-    // days) based only on whether the text contained "جمعه"/"آزمون" —
-    // completely ignoring what the student actually typed. It's more honest
-    // to show nothing than a confident-looking wrong number, so daysLeft
-    // simply stays null here and the countdown badge is hidden (the JSX
-    // below already handles daysLeft === null).
+    const today = getPersianTodayInfo();
+    const countdown = calculateExamCountdown(activeExamBudget);
 
     return {
-      examName: activeExamBudget.examName || 'آزمون آزمایشی پیش‌رو',
-      examDate: examDateStr,
-      daysLeft,
-      targetGoal: activeExamBudget.targetGoalText || 'تراز و درصد بالا در آزمون هدف',
+      examName: activeExamBudget.examName || 'آزمون آنلاین کشوری ماز - مرحله ۱ (۲۷ شهریور)',
+      examDate: activeExamBudget.examDate || 'جمعه ۲۷ شهریور ۱۴۰۵',
+      daysLeft: countdown.daysLeft,
+      isToday: countdown.isToday,
+      isPast: countdown.isPast,
+      daysPast: countdown.daysPast,
+      countdownLabel: countdown.label,
+      todayFullDate: today.formattedFullDate,
+      targetGoal: activeExamBudget.targetGoalText || 'تراز ماز بالای ۱۱,۰۰۰ با درصد اختصاصی بالای ۷۰٪',
       selectedTopics: activeExamBudget.selectedTopics || [],
       topicDetails: activeExamBudget.topicDetails || [],
-      totalTargetTests: activeExamBudget.totalTargetTests || 450,
+      totalTargetTests: activeExamBudget.totalTargetTests || 480,
     };
   }, [activeExamBudget]);
 
@@ -831,25 +826,58 @@ export const WeeklyScheduleView: React.FC<WeeklyScheduleViewProps> = ({
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-3.5 border-b border-white/10">
               <div className="space-y-1">
                 <div className="flex items-center gap-2 flex-wrap">
-                  <span className="px-3 py-1 rounded-full bg-amber-500/20 text-amber-300 text-xs font-black border border-amber-500/30 flex items-center gap-1.5">
-                    <CalendarCheck2 className="w-3.5 h-3.5 text-amber-400" />
-                    هدف‌گذاری آزمون پیش‌رو
+                  <span className="px-3 py-1 rounded-full bg-emerald-500/20 text-emerald-300 text-xs font-bold border border-emerald-500/30 flex items-center gap-1.5">
+                    <CalendarCheck2 className="w-3.5 h-3.5 text-emerald-400" />
+                    امروز: {examTimelineInfo.todayFullDate}
                   </span>
-                  <span className="text-xs bg-white/10 text-stone-200 px-2.5 py-1 rounded-full border border-white/10 font-bold flex items-center gap-1">
-                    <Clock className="w-3 h-3 text-amber-300" />
-                    تاریخ آزمون: {examTimelineInfo.examDate}
-                  </span>
-                  {examTimelineInfo.daysLeft !== null && (
-                    <span className={`text-xs px-3 py-1 rounded-full font-black flex items-center gap-1.5 ${
-                      examTimelineInfo.daysLeft <= 3 
-                        ? 'bg-rose-500/20 text-rose-300 border border-rose-500/40 animate-pulse' 
-                        : 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30'
-                    }`}>
-                      <Hourglass className="w-3.5 h-3.5" />
-                      {examTimelineInfo.daysLeft === 0 
-                        ? 'امروز روز آزمون است!' 
-                        : `${examTimelineInfo.daysLeft} روز تا آزمون باقی مانده`}
-                    </span>
+
+                  {examTimelineInfo.isPast ? (
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <span className="text-xs bg-rose-500/25 text-rose-200 px-3 py-1 rounded-full border border-rose-500/40 font-bold flex items-center gap-1.5 animate-pulse">
+                        <AlertTriangle className="w-3.5 h-3.5 text-rose-400" />
+                        تاریخ ثبت‌شده ({examTimelineInfo.examDate}) منقضی شده است!
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const nextExam = sanitizeAndAdvanceExamBudget({
+                            ...activeExamBudget,
+                            examName: 'آزمون آنلاین کشوری ماز - مرحله ۱ (۲۷ شهریور)',
+                            examDate: 'جمعه ۲۷ شهریور ۱۴۰۵',
+                            dateGregorian: '2026-09-18',
+                            daysUntilExam: 11,
+                          }, profile.fieldOfStudy);
+                          if (onUpdateExamBudget) {
+                            onUpdateExamBudget(nextExam);
+                          }
+                        }}
+                        className="text-xs px-3 py-1 rounded-full bg-amber-500 hover:bg-amber-400 text-stone-950 font-black flex items-center gap-1.5 transition-all shadow-md cursor-pointer"
+                      >
+                        <span>انتقال به آزمون پیش‌رو (۲۷ شهریور ماز)</span>
+                        <ArrowLeft className="w-3 h-3" />
+                      </button>
+                    </div>
+                  ) : (
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <span className="text-xs bg-white/10 text-stone-200 px-2.5 py-1 rounded-full border border-white/10 font-bold flex items-center gap-1">
+                        <Clock className="w-3 h-3 text-amber-300" />
+                        تاریخ آزمون بعدی: {examTimelineInfo.examDate}
+                      </span>
+                      {examTimelineInfo.daysLeft !== null && (
+                        <span className={`text-xs px-3 py-1 rounded-full font-black flex items-center gap-1.5 ${
+                          examTimelineInfo.isToday
+                            ? 'bg-emerald-500 text-stone-950 border border-emerald-400 font-extrabold animate-pulse'
+                            : examTimelineInfo.daysLeft <= 3 
+                            ? 'bg-rose-500/20 text-rose-300 border border-rose-500/40 animate-pulse' 
+                            : 'bg-amber-500/20 text-amber-300 border border-amber-500/30'
+                        }`}>
+                          <Hourglass className="w-3.5 h-3.5" />
+                          {examTimelineInfo.isToday 
+                            ? 'امروز روز آزمون است!' 
+                            : `${toPersianDigits(examTimelineInfo.daysLeft)} روز تا آزمون باقی مانده`}
+                        </span>
+                      )}
+                    </div>
                   )}
                 </div>
                 <h3 className="text-lg sm:text-xl font-black text-white flex items-center gap-2 pt-1">
@@ -937,10 +965,35 @@ export const WeeklyScheduleView: React.FC<WeeklyScheduleViewProps> = ({
                             </div>
 
                             {detail && (
-                              <div className="flex items-center gap-2 text-[11px] text-stone-400 flex-wrap">
-                                <span className="text-amber-300">سختی: {detail.difficulty}</span>
-                                <span>•</span>
-                                <span>هدف تست: {detail.targetTestCount} تست</span>
+                              <div className="mt-1.5 space-y-1 bg-black/25 p-2 rounded-xl border border-white/5">
+                                {detail.subtopic && (
+                                  <div className="text-[11px] text-stone-200 leading-relaxed">
+                                    <strong className="text-amber-300">مباحث و مفاهیم دقیق:</strong> {detail.subtopic}
+                                  </div>
+                                )}
+                                {detail.pagesOrScope && (
+                                  <div className="text-[10px] text-amber-200/90 font-medium flex items-center gap-1">
+                                    <span>📖</span>
+                                    <span>{detail.pagesOrScope}</span>
+                                  </div>
+                                )}
+                                {detail.testTypes && (
+                                  <div className="text-[10px] text-stone-300 flex items-center gap-1">
+                                    <span>🎯</span>
+                                    <span>{detail.testTypes}</span>
+                                  </div>
+                                )}
+                                <div className="flex items-center gap-2 text-[10px] text-stone-400 flex-wrap pt-0.5">
+                                  <span className="text-amber-400 font-bold">سختی: {detail.difficulty}</span>
+                                  <span>•</span>
+                                  <span className="text-stone-200">هدف تست: {toPersianDigits(detail.targetTestCount)} تست</span>
+                                  {detail.importanceWeight && (
+                                    <>
+                                      <span>•</span>
+                                      <span className="text-amber-300/80">{detail.importanceWeight}</span>
+                                    </>
+                                  )}
+                                </div>
                               </div>
                             )}
                           </div>
