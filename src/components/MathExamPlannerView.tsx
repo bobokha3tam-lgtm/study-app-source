@@ -41,6 +41,7 @@ import {
   StreamType 
 } from '../data/curriculumData';
 import { KonkurAdvancedSearchModal } from './KonkurAdvancedSearchModal';
+import { getLiveDaysUntilExam } from '../utils/examCountdown';
 
 interface MathExamPlannerViewProps {
   profile: StudentProfile;
@@ -416,8 +417,13 @@ export function MathExamPlannerView({
   const grandTotalTests = totalLearningTests + totalTimedPracticeTests + totalReviewTests;
   const totalEstimatedHours = selectedTopicObjects.reduce((acc, t) => acc + (t.testVolume?.estimatedStudyHours || 15), 0);
 
-  // Daily test pacing calculation (assuming 6 active study days)
-  const daysUntilExam = 6;
+  // Daily test pacing calculation, based on the days the student actually
+  // has left until the exam (ticks down correctly day by day — see
+  // src/utils/examCountdown.ts). Previously this was hardcoded to 6
+  // regardless of how many days were really left, so the daily pace shown
+  // was wrong for anyone whose exam wasn't exactly 6 days away. Falls back
+  // to 6 only if the student hasn't entered a value yet.
+  const daysUntilExam = Math.max(1, getLiveDaysUntilExam(examBudget) ?? 6);
   const dailyTestTarget = Math.ceil(grandTotalTests / daysUntilExam);
   const dailyHoursTarget = (totalEstimatedHours / daysUntilExam).toFixed(1);
 
@@ -1229,7 +1235,7 @@ export function MathExamPlannerView({
         )}
 
         {/* Exam Budget Form Fields */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mt-5 pt-5 border-t border-stone-100">
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mt-5 pt-5 border-t border-stone-100">
           <div>
             <label className="block text-xs font-semibold text-stone-700 mb-1">
               نام آزمون آزمایشی
@@ -1254,6 +1260,37 @@ export function MathExamPlannerView({
               placeholder="مثال: جمعه هفته آینده / ۱۸ آبان"
               className="w-full text-xs sm:text-sm px-3.5 py-2.5 rounded-xl border border-stone-200 bg-stone-50 focus:bg-white focus:outline-none focus:ring-2 focus:ring-emerald-500 text-stone-800"
             />
+          </div>
+
+          <div>
+            <label className="block text-xs font-semibold text-stone-700 mb-1">
+              چند روز تا آزمون فرصت دارید؟
+            </label>
+            <input
+              type="number"
+              min={1}
+              max={365}
+              value={examBudget.daysUntilExam ?? ''}
+              onChange={(e) => {
+                const raw = e.target.value;
+                const parsed = raw === '' ? undefined : Math.max(1, Math.min(365, parseInt(raw, 10) || 1));
+                onUpdateExamBudget({
+                  ...examBudget,
+                  daysUntilExam: parsed,
+                  daysUntilExamSetAt: parsed === undefined ? undefined : new Date().toISOString(),
+                });
+              }}
+              placeholder="مثال: ۶"
+              className="w-full text-xs sm:text-sm px-3.5 py-2.5 rounded-xl border border-stone-200 bg-stone-50 focus:bg-white focus:outline-none focus:ring-2 focus:ring-emerald-500 text-stone-800"
+            />
+            <p className="text-[10px] text-stone-400 mt-1">
+              {(() => {
+                const live = getLiveDaysUntilExam(examBudget);
+                if (live === null) return 'این عدد مبنای محاسبه‌ی تعداد تست و ساعت مطالعه روزانه است.';
+                if (live === 0) return '📍 امروز روز آزمون است!';
+                return `📍 در حال حاضر ${live} روز واقعی تا آزمون باقی مانده.`;
+              })()}
+            </p>
           </div>
 
           <div>

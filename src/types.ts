@@ -263,6 +263,8 @@ export interface MathTopicInfo {
 export interface ExamBudget {
   examName: string;
   examDate: string;
+  daysUntilExam?: number; // تعداد روز باقی‌مانده تا آزمون؛ توسط کاربر وارد می‌شود
+  daysUntilExamSetAt?: string; // زمان ثبت/آخرین ویرایش daysUntilExam (ISO) — مبنای محاسبه شمارش معکوس واقعی
   targetGoalText: string;
   syllabusDetails: string;
   selectedTopics: string[];

@@ -47,6 +47,7 @@ import {
 import { StudentProfile, WeeklySchedule, DaySchedule, StudyBlock, ExamBudget } from '../types';
 import { getSuggestedSubjectsForStream } from '../data/curriculumData';
 import { LiveFocusRoom } from './LiveFocusRoom';
+import { getLiveDaysUntilExam } from '../utils/examCountdown';
 
 interface WeeklyScheduleViewProps {
   schedule: WeeklySchedule;
@@ -162,22 +163,28 @@ export const WeeklyScheduleView: React.FC<WeeklyScheduleViewProps> = ({
       return null;
     }
     const examDateStr = activeExamBudget.examDate.trim();
-    
-    // Parse possible date strings (e.g., ISO, Jalali date, or textual like 'جمعه ۱۸ آبان')
-    let daysLeft: number | null = null;
-    const parsedTimestamp = Date.parse(examDateStr);
-    if (!isNaN(parsedTimestamp)) {
-      const diffMs = parsedTimestamp - Date.now();
-      daysLeft = Math.max(0, Math.ceil(diffMs / (1000 * 60 * 60 * 24)));
-    } else {
-      // Extract numbers if string contains day of month (e.g., ۱۸ آبان)
-      // Default to realistic days if text specifies an upcoming Friday
-      if (examDateStr.includes('جمعه') || examDateStr.includes('آزمون')) {
-        daysLeft = 5; // Default close target for upcoming weekend
-      } else {
-        daysLeft = 6;
+
+    // 1) Prefer the day count the student actually entered — it ticks down
+    //    correctly over time (see src/utils/examCountdown.ts).
+    let daysLeft: number | null = getLiveDaysUntilExam(activeExamBudget);
+
+    // 2) Fall back to a real date parse only if it's an actual parseable
+    //    date (e.g. an ISO string) — examDate is normally free Persian text
+    //    like "جمعه ۱۸ آبان" which Date.parse can never understand, so this
+    //    rarely applies.
+    if (daysLeft === null) {
+      const parsedTimestamp = Date.parse(examDateStr);
+      if (!isNaN(parsedTimestamp)) {
+        const diffMs = parsedTimestamp - Date.now();
+        daysLeft = Math.max(0, Math.ceil(diffMs / (1000 * 60 * 60 * 24)));
       }
     }
+    // Previously, any remaining case fell back to a hardcoded guess (5 or 6
+    // days) based only on whether the text contained "جمعه"/"آزمون" —
+    // completely ignoring what the student actually typed. It's more honest
+    // to show nothing than a confident-looking wrong number, so daysLeft
+    // simply stays null here and the countdown badge is hidden (the JSX
+    // below already handles daysLeft === null).
 
     return {
       examName: activeExamBudget.examName || 'آزمون آزمایشی پیش‌رو',

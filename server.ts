@@ -1676,14 +1676,14 @@ ${examBudget.weeklyClasses.map((cls: any, i: number) =>
     }
 
     if (examBudget?.topicDetails && examBudget.topicDetails.length > 0) {
-      prompt += `\n\n🎯 بودجه‌بندی فصول آزمون با درجه سختی و تارگت تست دقیق (باید در برنامه روزانه توزیع شوند):
+      prompt += `\n\n🎯 بودجه‌بندی فصول آزمون با درجه سختی و تارگت تست دقیق (باید در برنامه روزانه توزیع شوند)${examBudget.daysUntilExam ? ` — ${examBudget.daysUntilExam} روز تا این آزمون باقی مانده، شدت برنامه را متناسب با آن تنظیم کن` : ""}:
 ${examBudget.topicDetails.map((td: any, i: number) => 
   `${i + 1}. درس: ${td.subject} | فصل: ${td.chapter} | زیرمبحث: ${td.subtopic || td.chapter} | سختی: ${td.difficulty} | اهمیت: ${td.importanceWeight || 'متوسط'} | تست هدف: ${td.targetTestCount} تست`
 ).join("\n")}
 مجموع کل تست‌های هدف برای آمادگی آزمون: ${examBudget.totalTargetTests || 450} تست`;
     } else if (examBudget) {
       prompt += `\n\n🎯 سرفصل‌های آزمون پیش‌رو:
-- نام آزمون: ${examBudget.examName || "آزمون آزمایشی"} (${examBudget.examDate || "جمعه"})
+- نام آزمون: ${examBudget.examName || "آزمون آزمایشی"} (${examBudget.examDate || "جمعه"})${examBudget.daysUntilExam ? `\n- تعداد روز باقی‌مانده تا این آزمون: ${examBudget.daysUntilExam} روز (شدت و فوریت برنامه را متناسب با همین بازه زمانی واقعی تنظیم کن)` : ""}
 - سرفصل‌ها: ${examBudget.syllabusDetails || (examBudget.selectedTopics || []).join(" - ")}`;
     }
 
