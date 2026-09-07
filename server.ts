@@ -126,6 +126,7 @@ interface ServerStudentStore {
   students: any[];
   deletedStudents: string[];
   usageStats: Record<string, any>;
+  sleepPlans?: Record<string, any>;
   counselorConfig: {
     username: string;
     passcode: string;
@@ -478,6 +479,7 @@ function loadServerStudentStore(): ServerStudentStore {
           students: parsed.students || [],
           deletedStudents: parsed.deletedStudents || [],
           usageStats: parsed.usageStats || {},
+          sleepPlans: parsed.sleepPlans || {},
           counselorConfig: parsed.counselorConfig || {
             username: "مشاور",
             passcode: "1234",
@@ -539,6 +541,7 @@ function loadServerStudentStore(): ServerStudentStore {
     students: [],
     deletedStudents: [],
     usageStats: {},
+    sleepPlans: {},
     counselorConfig: {
       username: "مشاور",
       passcode: "1234",
@@ -2881,6 +2884,31 @@ function addTelegramLog(type: "incoming" | "outgoing" | "error" | "system", text
   telegramLogs.unshift(entry);
   if (telegramLogs.length > 80) {
     telegramLogs.pop();
+  }
+}
+
+async function sendTelegramMessage(botToken: string, chatId: string, text: string): Promise<boolean> {
+  try {
+    const response = await fetch(`https://api.telegram.org/bot${botToken}/sendMessage`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        chat_id: String(chatId).trim(),
+        text,
+        parse_mode: "Markdown",
+        reply_markup: TELEGRAM_MAIN_KEYBOARD,
+      }),
+    });
+    const data: any = await response.json();
+    if (data.ok) {
+      addTelegramLog("outgoing", text, `چت ${chatId}`);
+      return true;
+    }
+    addTelegramLog("error", data.description || "خطای ناشناخته ارسال پیام", `چت ${chatId}`);
+    return false;
+  } catch (err: any) {
+    addTelegramLog("error", err?.message || String(err), `چت ${chatId}`);
+    return false;
   }
 }
 
@@ -6287,6 +6315,119 @@ app.get("/api/students/usage", requireAuthorizedUser, (req, res) => {
   });
 });
 
+// --- Gradual sleep-schedule adjustment: server needs a copy of each
+// student's plan so it can send a Telegram wake-up ping at the right time,
+// even if the student's browser/tab is closed. ---
+
+app.post("/api/students/sleep-plan", requireAuthorizedUser, (req, res) => {
+  const user = (req as any).user;
+  if (user?.type !== "student") {
+    return res.status(403).json({ success: false, error: "این قابلیت فقط برای دانش‌آموزان است." });
+  }
+  const { plan } = req.body;
+  if (!serverStudentStore.sleepPlans) serverStudentStore.sleepPlans = {};
+  if (plan === null) {
+    delete serverStudentStore.sleepPlans[user.studentName];
+  } else if (plan && typeof plan === "object") {
+    serverStudentStore.sleepPlans[user.studentName] = plan;
+  }
+  serverStudentStore.updatedAt = new Date().toISOString();
+  saveServerStudentStore(serverStudentStore);
+  res.json({ success: true });
+});
+
+app.get("/api/students/sleep-plan", requireAuthorizedUser, (req, res) => {
+  const user = (req as any).user;
+  if (user?.type !== "student") {
+    return res.status(403).json({ success: false, error: "این قابلیت فقط برای دانش‌آموزان است." });
+  }
+  const plan = serverStudentStore.sleepPlans?.[user.studentName] || null;
+  res.json({ success: true, plan });
+});
+
+// Iran does not observe DST since 2022, so a fixed UTC+3:30 offset is safe.
+function getIranTimeParts(d: Date = new Date()): { hhmm: string; dateISO: string } {
+  const iranMs = d.getTime() + (3 * 60 + 30) * 60 * 1000 + d.getTimezoneOffset() * 60 * 1000;
+  const iranDate = new Date(iranMs);
+  const hh = String(iranDate.getUTCHours()).padStart(2, "0");
+  const mm = String(iranDate.getUTCMinutes()).padStart(2, "0");
+  const dateISO = `${iranDate.getUTCFullYear()}-${String(iranDate.getUTCMonth() + 1).padStart(2, "0")}-${String(iranDate.getUTCDate()).padStart(2, "0")}`;
+  return { hhmm: `${hh}:${mm}`, dateISO };
+}
+
+function timeToMins(t: string): number {
+  const [h, m] = (t || "00:00").split(":").map((n) => parseInt(n, 10) || 0);
+  return h * 60 + m;
+}
+
+function moveTowardMins(start: number, target: number, shiftAmount: number): number {
+  if (start === target) return target;
+  const diff = target - start;
+  const dir = diff > 0 ? 1 : -1;
+  const applied = Math.min(Math.abs(diff), Math.max(0, shiftAmount));
+  return start + dir * applied;
+}
+
+function computeTodaysWakeTimeForPlan(plan: any): string {
+  const wakeDiff = Math.abs(timeToMins(plan.targetWakeTime) - timeToMins(plan.currentWakeTime));
+  const sleepDiff = Math.abs(timeToMins(plan.targetSleepTime) - timeToMins(plan.currentSleepTime));
+  const needed = Math.max(1, Math.ceil(Math.max(wakeDiff, sleepDiff) / Math.max(1, plan.stepMinutes)));
+  const steps = Math.min(plan.confirmedSteps || 0, needed);
+  const wakeMins = moveTowardMins(timeToMins(plan.currentWakeTime), timeToMins(plan.targetWakeTime), steps * plan.stepMinutes);
+  const h = Math.floor(wakeMins / 60);
+  const m = wakeMins % 60;
+  return `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}`;
+}
+
+async function checkAndSendWakeUpPings() {
+  try {
+    const plans = serverStudentStore.sleepPlans || {};
+    const tokenToUse = serverStudentStore.telegramBotConfig?.botToken || currentPollingToken;
+    if (!tokenToUse) return;
+    const { hhmm, dateISO } = getIranTimeParts();
+
+    for (const studentName of Object.keys(plans)) {
+      const plan = plans[studentName];
+      if (!plan) continue;
+      const student = serverStudentStore.students.find((s) => s.name === studentName);
+      if (!student || !student.telegramChatId) continue;
+
+      const targetWake = computeTodaysWakeTimeForPlan(plan);
+      const alreadyCheckedInToday = Array.isArray(plan.history) && plan.history.some((h: any) => h.date === dateISO);
+
+      // Primary ping, right at the target minute.
+      if (targetWake === hhmm && plan.lastPingDate !== dateISO) {
+        plan.lastPingDate = dateISO;
+        await sendTelegramMessage(
+          tokenToUse,
+          student.telegramChatId,
+          `⏰ صبح بخیر ${studentName}!\nساعت ${targetWake} شد — وقتشه بیدار شی. برو توی برنامه بزن «موفق شدم» تا یه قدم به هدفت نزدیک‌تر بشی 💪`
+        );
+        saveServerStudentStore(serverStudentStore);
+      }
+
+      // One follow-up nag 15 minutes later, only if they haven't checked in yet.
+      const nagMins = timeToMins(targetWake) + 15;
+      const nagHH = String(Math.floor(nagMins / 60) % 24).padStart(2, "0");
+      const nagMM = String(nagMins % 60).padStart(2, "0");
+      const nagTime = `${nagHH}:${nagMM}`;
+      if (nagTime === hhmm && plan.lastNagDate !== dateISO && !alreadyCheckedInToday) {
+        plan.lastNagDate = dateISO;
+        await sendTelegramMessage(
+          tokenToUse,
+          student.telegramChatId,
+          `😴 هنوز جواب ندادی... بیدار شدی یا نه؟ برو توی برنامه بزن که چی شد، حتی اگه نشد.`
+        );
+        saveServerStudentStore(serverStudentStore);
+      }
+    }
+  } catch (err) {
+    console.error("checkAndSendWakeUpPings error:", err);
+  }
+}
+
+setInterval(checkAndSendWakeUpPings, 60 * 1000);
+
 // Vite middleware or static serving
 async function startServer() {
   try {
@@ -6334,6 +6475,7 @@ async function startServer() {
         deletedStudents: deletedList,
         counselorConfig: remoteStore.counselorConfig || localStore.counselorConfig,
         usageStats: { ...(remoteStore.usageStats || {}), ...(localStore.usageStats || {}) },
+        sleepPlans: { ...(remoteStore.sleepPlans || {}), ...(localStore.sleepPlans || {}) },
         updatedAt: new Date().toISOString()
       };
 

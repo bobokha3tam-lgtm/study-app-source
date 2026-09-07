@@ -101,6 +101,13 @@ export const WeeklyScheduleView: React.FC<WeeklyScheduleViewProps> = ({
     } catch (e) {
       console.error(e);
     }
+    // Sync to the server so it can send the Telegram wake-up ping even when
+    // this browser tab is closed. Best-effort — local state already updated.
+    fetch('/api/students/sleep-plan', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ profile: { id: profile.id, name: profile.name }, plan }),
+    }).catch(() => {});
   };
   
   // AI Generation State
