@@ -552,7 +552,7 @@ export const WeeklyScheduleView: React.FC<WeeklyScheduleViewProps> = ({
         effectiveProfile = { ...profile, wakeTime: todaysTarget.wakeTime, sleepTime: todaysTarget.sleepTime };
         sleepAdjustmentNote = todaysTarget.isComplete
           ? `دانش‌آموز به هدف تنظیم خواب خودش رسیده: بیداری ${todaysTarget.wakeTime}، خواب ${todaysTarget.sleepTime}. برنامه رو دقیقاً از همین ساعت بیداری شروع کن.`
-          : `دانش‌آموز در حال تنظیم تدریجی ساعت خواب است (روز ${todaysTarget.dayNumber}). امروز دقیقاً باید ساعت ${todaysTarget.wakeTime} بیدار شود و ساعت ${todaysTarget.sleepTime} بخوابد — نه ساعت قبلی. برنامه امروز و این هفته را دقیقاً از همین ساعت بیداری شروع کن و بعد از ساعت خواب جدید هیچ بلوک مطالعه‌ای قرار نده.`;
+          : `دانش‌آموز در حال تنظیم تدریجی ساعت خواب است (قدم ${todaysTarget.stepsSoFar} از ${todaysTarget.totalStepsNeeded}). امروز دقیقاً باید ساعت ${todaysTarget.wakeTime} بیدار شود و ساعت ${todaysTarget.sleepTime} بخوابد — نه ساعت قبلی. برنامه امروز و این هفته را دقیقاً از همین ساعت بیداری شروع کن و بعد از ساعت خواب جدید هیچ بلوک مطالعه‌ای قرار نده.`;
       }
 
       const response = await fetch('/api/advisor/generate-schedule', {

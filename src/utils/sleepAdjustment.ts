@@ -1,28 +1,25 @@
-// Gradual sleep-schedule adjustment.
+// Gradual, check-in-driven sleep-schedule adjustment.
 //
-// The idea: a student who currently wakes up too late (or sleeps too late)
-// sets their CURRENT routine and a TARGET routine. Instead of jumping
-// straight to the target (which rarely sticks), the wake/sleep time shifts
-// by a small step every few days until the target is reached.
+// Instead of blindly advancing the target every N days (which keeps pushing
+// the goal further away if the student doesn't actually manage to wake up
+// on time), the target only moves one step closer once the student confirms
+// they actually hit today's target. A missed or unconfirmed day simply holds
+// the target where it is — no growing gap, no guilt spiral, just another
+// shot at the same (already-reachable) time tomorrow.
 
-export interface SleepAdjustmentPlan {
-  currentWakeTime: string; // "HH:mm", where the student actually wakes up today
-  currentSleepTime: string; // "HH:mm", where the student actually falls asleep today
-  targetWakeTime: string; // "HH:mm", the goal wake time
-  targetSleepTime: string; // "HH:mm", the goal sleep time
-  startDate: string; // "YYYY-MM-DD", the day the plan started
-  stepMinutes: number; // how many minutes to shift per interval
-  intervalDays: number; // how many days between each shift
+export interface SleepCheckIn {
+  date: string; // "YYYY-MM-DD"
+  success: boolean;
 }
 
-export interface SleepAdjustmentToday {
-  wakeTime: string;
-  sleepTime: string;
-  dayNumber: number; // 1-indexed day of the plan
-  totalDaysEstimate: number; // rough total days until target is reached
-  isComplete: boolean;
-  wakeMinutesShiftedSoFar: number;
-  wakeMinutesRemaining: number;
+export interface SleepAdjustmentPlan {
+  currentWakeTime: string; // "HH:mm", starting point
+  currentSleepTime: string; // "HH:mm", starting point
+  targetWakeTime: string; // "HH:mm", the goal
+  targetSleepTime: string; // "HH:mm", the goal
+  stepMinutes: number; // how many minutes closer to move per confirmed success
+  confirmedSteps: number; // how many successful steps have been earned so far
+  history: SleepCheckIn[]; // most recent first, kept short
 }
 
 function timeToMinutes(t: string): number {
@@ -37,7 +34,6 @@ function minutesToTime(mins: number): string {
   return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
 }
 
-// Moves `start` toward `target` by at most `shiftAmount` minutes, never overshooting.
 function moveToward(start: number, target: number, shiftAmount: number): number {
   if (start === target) return target;
   const diff = target - start;
@@ -46,47 +42,86 @@ function moveToward(start: number, target: number, shiftAmount: number): number 
   return start + dir * applied;
 }
 
-function daysBetween(fromISO: string, toDate: Date): number {
-  const from = new Date(fromISO + 'T00:00:00');
-  const to = new Date(toDate.getFullYear(), toDate.getMonth(), toDate.getDate());
-  return Math.floor((to.getTime() - from.getTime()) / 86400000);
+export function todayISO(d: Date = new Date()): string {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+
+export interface SleepAdjustmentToday {
+  wakeTime: string;
+  sleepTime: string;
+  stepsSoFar: number;
+  totalStepsNeeded: number;
+  isComplete: boolean;
+  hasCheckedInToday: boolean;
+  currentStreak: number; // consecutive successful check-ins, most recent first
+}
+
+function totalStepsNeeded(plan: SleepAdjustmentPlan): number {
+  const wakeDiff = Math.abs(timeToMinutes(plan.targetWakeTime) - timeToMinutes(plan.currentWakeTime));
+  const sleepDiff = Math.abs(timeToMinutes(plan.targetSleepTime) - timeToMinutes(plan.currentSleepTime));
+  const maxDiff = Math.max(wakeDiff, sleepDiff);
+  return Math.max(1, Math.ceil(maxDiff / Math.max(1, plan.stepMinutes)));
 }
 
 export function computeTodaysSleepTarget(
   plan: SleepAdjustmentPlan,
   today: Date = new Date()
 ): SleepAdjustmentToday {
-  const daysElapsed = Math.max(0, daysBetween(plan.startDate, today));
-  const stepsElapsed = Math.floor(daysElapsed / Math.max(1, plan.intervalDays));
-  const totalShift = stepsElapsed * plan.stepMinutes;
+  const needed = totalStepsNeeded(plan);
+  const steps = Math.min(plan.confirmedSteps, needed);
+  const shiftAmount = steps * plan.stepMinutes;
 
-  const wakeStart = timeToMinutes(plan.currentWakeTime);
-  const wakeTarget = timeToMinutes(plan.targetWakeTime);
-  const sleepStart = timeToMinutes(plan.currentSleepTime);
-  const sleepTarget = timeToMinutes(plan.targetSleepTime);
+  const wakeMins = moveToward(timeToMinutes(plan.currentWakeTime), timeToMinutes(plan.targetWakeTime), shiftAmount);
+  const sleepMins = moveToward(timeToMinutes(plan.currentSleepTime), timeToMinutes(plan.targetSleepTime), shiftAmount);
 
-  const todayWakeMins = moveToward(wakeStart, wakeTarget, totalShift);
-  const todaySleepMins = moveToward(sleepStart, sleepTarget, totalShift);
+  const todayStr = todayISO(today);
+  const hasCheckedInToday = plan.history.some((h) => h.date === todayStr);
 
-  const wakeReached = todayWakeMins === wakeTarget;
-  const sleepReached = todaySleepMins === sleepTarget;
-
-  const maxDiff = Math.max(Math.abs(wakeTarget - wakeStart), Math.abs(sleepTarget - sleepStart));
-  const totalDaysEstimate = Math.max(1, Math.ceil(maxDiff / Math.max(1, plan.stepMinutes)) * plan.intervalDays);
+  let currentStreak = 0;
+  for (const h of plan.history) {
+    if (h.success) currentStreak++;
+    else break;
+  }
 
   return {
-    wakeTime: minutesToTime(todayWakeMins),
-    sleepTime: minutesToTime(todaySleepMins),
-    dayNumber: daysElapsed + 1,
-    totalDaysEstimate,
-    isComplete: wakeReached && sleepReached,
-    wakeMinutesShiftedSoFar: Math.abs(todayWakeMins - wakeStart),
-    wakeMinutesRemaining: Math.abs(wakeTarget - todayWakeMins),
+    wakeTime: minutesToTime(wakeMins),
+    sleepTime: minutesToTime(sleepMins),
+    stepsSoFar: steps,
+    totalStepsNeeded: needed,
+    isComplete: steps >= needed,
+    hasCheckedInToday,
+    currentStreak,
   };
 }
 
-export const SLEEP_PACE_PRESETS: { id: string; label: string; stepMinutes: number; intervalDays: number; note: string }[] = [
-  { id: 'gentle', label: 'آروم و پایدار', stepMinutes: 10, intervalDays: 3, note: 'هر ۳ روز، ۱۰ دقیقه' },
-  { id: 'medium', label: 'متوسط', stepMinutes: 15, intervalDays: 2, note: 'هر ۲ روز، ۱۵ دقیقه' },
-  { id: 'fast', label: 'سریع', stepMinutes: 20, intervalDays: 1, note: 'هر روز، ۲۰ دقیقه' },
+// Records today's check-in. On success, advances one step (capped at the
+// total needed). On failure, the step count is untouched — tomorrow's
+// target will be exactly the same as today's, giving another shot at it.
+export function recordCheckIn(
+  plan: SleepAdjustmentPlan,
+  success: boolean,
+  today: Date = new Date()
+): SleepAdjustmentPlan {
+  const todayStr = todayISO(today);
+  const existing = plan.history.find((h) => h.date === todayStr);
+  const history = existing
+    ? plan.history.map((h) => (h.date === todayStr ? { date: todayStr, success } : h))
+    : [{ date: todayStr, success }, ...plan.history].slice(0, 60);
+
+  const needed = totalStepsNeeded(plan);
+  let confirmedSteps = plan.confirmedSteps;
+  if (success && !existing?.success) {
+    confirmedSteps = Math.min(needed, confirmedSteps + 1);
+  } else if (!success && existing?.success) {
+    // Correcting an earlier accidental "success" tap back to "missed".
+    confirmedSteps = Math.max(0, confirmedSteps - 1);
+  }
+
+  return { ...plan, history, confirmedSteps };
+}
+
+export const SLEEP_PACE_PRESETS: { id: string; label: string; stepMinutes: number; note: string }[] = [
+  { id: 'gentle', label: 'آروم و پایدار', stepMinutes: 10, note: '۱۰ دقیقه به ازای هر روز موفق' },
+  { id: 'medium', label: 'متوسط', stepMinutes: 15, note: '۱۵ دقیقه به ازای هر روز موفق' },
+  { id: 'fast', label: 'سریع', stepMinutes: 20, note: '۲۰ دقیقه به ازای هر روز موفق' },
 ];

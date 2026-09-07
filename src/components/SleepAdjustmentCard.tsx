@@ -1,8 +1,9 @@
 import React, { useState } from 'react';
-import { Moon, Sunrise, ChevronRight, Sparkles, RotateCcw, Check } from 'lucide-react';
+import { Moon, Sunrise, ChevronRight, Sparkles, RotateCcw, Check, X, Flame } from 'lucide-react';
 import {
   SleepAdjustmentPlan,
   computeTodaysSleepTarget,
+  recordCheckIn,
   SLEEP_PACE_PRESETS,
 } from '../utils/sleepAdjustment';
 
@@ -10,11 +11,6 @@ interface SleepAdjustmentCardProps {
   plan: SleepAdjustmentPlan | null;
   onSavePlan: (plan: SleepAdjustmentPlan | null) => void;
 }
-
-const todayISO = () => {
-  const d = new Date();
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-};
 
 export const SleepAdjustmentCard: React.FC<SleepAdjustmentCardProps> = ({ plan, onSavePlan }) => {
   const [isEditing, setIsEditing] = useState(!plan);
@@ -31,9 +27,9 @@ export const SleepAdjustmentCard: React.FC<SleepAdjustmentCardProps> = ({ plan, 
       currentSleepTime: currentSleep,
       targetWakeTime: targetWake,
       targetSleepTime: targetSleep,
-      startDate: todayISO(),
       stepMinutes: pace.stepMinutes,
-      intervalDays: pace.intervalDays,
+      confirmedSteps: 0,
+      history: [],
     });
     setIsEditing(false);
   };
@@ -51,7 +47,7 @@ export const SleepAdjustmentCard: React.FC<SleepAdjustmentCardProps> = ({ plan, 
           <h3 className="font-bold text-sm sm:text-base">تنظیم تدریجی ساعت خواب</h3>
         </div>
         <p className="text-xs text-indigo-200/80 mb-5">
-          به‌جای تغییر یک‌دفعه‌ای، ساعت بیداری و خوابت رو کم‌کم و آروم به سمت هدف می‌بریم تا واقعاً جا بیفته.
+          هر روز که واقعاً به هدف اون روز برسی، یه قدم جلوتر می‌ریم. اگه یه روز نشد، هیچی از دست نمی‌ره — همون هدف فردا هم هست، بدون فشار.
         </p>
 
         <div className="grid grid-cols-2 gap-3 mb-4">
@@ -94,7 +90,7 @@ export const SleepAdjustmentCard: React.FC<SleepAdjustmentCardProps> = ({ plan, 
         </div>
 
         <div className="mb-5">
-          <label className="text-[11px] text-indigo-200/70 block mb-2">با چه سرعتی جلو بریم؟</label>
+          <label className="text-[11px] text-indigo-200/70 block mb-2">هر روز موفق، چقدر جلو بریم؟</label>
           <div className="grid grid-cols-3 gap-2">
             {SLEEP_PACE_PRESETS.map((p) => (
               <button
@@ -124,8 +120,12 @@ export const SleepAdjustmentCard: React.FC<SleepAdjustmentCardProps> = ({ plan, 
     );
   }
 
-  const todayTarget = computeTodaysSleepTarget(plan!);
-  const progressPct = Math.min(100, Math.round((todayTarget.dayNumber / todayTarget.totalDaysEstimate) * 100));
+  const today = computeTodaysSleepTarget(plan!);
+  const progressPct = Math.min(100, Math.round((today.stepsSoFar / today.totalStepsNeeded) * 100));
+
+  const handleCheckIn = (success: boolean) => {
+    onSavePlan(recordCheckIn(plan!, success));
+  };
 
   return (
     <div className="bg-gradient-to-br from-indigo-950 via-stone-900 to-stone-900 text-white rounded-3xl p-5 sm:p-6 border border-indigo-500/30 shadow-md">
@@ -133,21 +133,26 @@ export const SleepAdjustmentCard: React.FC<SleepAdjustmentCardProps> = ({ plan, 
         <div className="flex items-center gap-2">
           <Moon size={18} className="text-indigo-300" />
           <h3 className="font-bold text-sm sm:text-base">برنامه تدریجی خواب</h3>
+          {today.currentStreak >= 2 && (
+            <span className="flex items-center gap-0.5 bg-amber-500/20 text-amber-300 text-[10px] font-bold px-2 py-0.5 rounded-full border border-amber-500/30">
+              <Flame size={11} /> {today.currentStreak} روز پشت‌سرهم
+            </span>
+          )}
         </div>
         <button
           onClick={handleReset}
-          className="text-[11px] text-stone-400 hover:text-stone-200 flex items-center gap-1"
+          className="text-[11px] text-stone-400 hover:text-stone-200 flex items-center gap-1 shrink-0"
         >
           <RotateCcw size={12} />
           تنظیم مجدد
         </button>
       </div>
 
-      {todayTarget.isComplete ? (
+      {today.isComplete ? (
         <div className="flex items-center gap-3 bg-emerald-500/10 border border-emerald-500/30 rounded-2xl p-4">
           <Check size={20} className="text-emerald-400 shrink-0" />
           <p className="text-sm text-emerald-200">
-            به هدفت رسیدی 🎉 حالا ساعت بیداری‌ت <b>{todayTarget.wakeTime}</b> و خوابت <b>{todayTarget.sleepTime}</b> هست. سعی کن نگهش داری.
+            به هدفت رسیدی 🎉 حالا ساعت بیداری‌ت <b>{today.wakeTime}</b> و خوابت <b>{today.sleepTime}</b> هست. سعی کن نگهش داری.
           </p>
         </div>
       ) : (
@@ -156,28 +161,53 @@ export const SleepAdjustmentCard: React.FC<SleepAdjustmentCardProps> = ({ plan, 
             <div className="bg-stone-800/80 rounded-2xl p-3 border border-white/10 text-center">
               <Sunrise size={16} className="text-amber-300 mx-auto mb-1" />
               <div className="text-[11px] text-stone-400 mb-0.5">امروز بیدار شو</div>
-              <div className="text-lg font-black">{todayTarget.wakeTime}</div>
+              <div className="text-lg font-black">{today.wakeTime}</div>
             </div>
             <div className="bg-stone-800/80 rounded-2xl p-3 border border-white/10 text-center">
               <Moon size={16} className="text-indigo-300 mx-auto mb-1" />
               <div className="text-[11px] text-stone-400 mb-0.5">امروز بخواب</div>
-              <div className="text-lg font-black">{todayTarget.sleepTime}</div>
+              <div className="text-lg font-black">{today.sleepTime}</div>
             </div>
           </div>
 
           <div className="mb-2 flex items-center justify-between text-[11px] text-stone-400">
-            <span>روز {todayTarget.dayNumber} از حدود {todayTarget.totalDaysEstimate}</span>
+            <span>قدم {today.stepsSoFar} از {today.totalStepsNeeded}</span>
             <span>هدف نهایی: {plan!.targetWakeTime}</span>
           </div>
-          <div className="bg-stone-800/80 rounded-full h-2 overflow-hidden border border-white/10">
+          <div className="bg-stone-800/80 rounded-full h-2 overflow-hidden border border-white/10 mb-4">
             <div
               className="bg-gradient-to-r from-indigo-500 to-emerald-400 h-full rounded-full transition-all duration-500"
               style={{ width: `${progressPct}%` }}
             />
           </div>
+
+          {today.hasCheckedInToday ? (
+            <p className="text-xs text-center text-stone-400 bg-stone-800/50 rounded-xl py-2.5">
+              امروز رو ثبت کردی ✓ فردا دوباره اینجا رو چک کن.
+            </p>
+          ) : (
+            <div>
+              <p className="text-xs text-stone-300 mb-2 text-center">امروز طبق همین ساعت بیدار شدی؟</p>
+              <div className="grid grid-cols-2 gap-2">
+                <button
+                  onClick={() => handleCheckIn(true)}
+                  className="flex items-center justify-center gap-1.5 bg-emerald-500/20 hover:bg-emerald-500/30 border border-emerald-500/40 text-emerald-200 font-bold text-xs py-2.5 rounded-xl transition-colors"
+                >
+                  <Check size={14} /> آره، موفق شدم
+                </button>
+                <button
+                  onClick={() => handleCheckIn(false)}
+                  className="flex items-center justify-center gap-1.5 bg-stone-800/80 hover:bg-stone-700/80 border border-white/10 text-stone-300 font-bold text-xs py-2.5 rounded-xl transition-colors"
+                >
+                  <X size={14} /> نه، دیرتر شد
+                </button>
+              </div>
+            </div>
+          )}
+
           <p className="text-[11px] text-stone-400 mt-3 flex items-center gap-1">
             <ChevronRight size={12} />
-            هر {plan!.intervalDays} روز، {plan!.stepMinutes} دقیقه زودتر — بدون فشار، قدم به قدم.
+            هر روز موفق = {plan!.stepMinutes} دقیقه نزدیک‌تر به هدف. روزهای ناموفق چیزی رو خراب نمی‌کنن.
           </p>
         </>
       )}
